@@ -1,0 +1,29 @@
+version: '3.7'
+
+services:
+  laptop:
+    build:
+      context: .
+      dockerfile: Dockerfile-supervisor
+      args:
+        - DEVICE_TYPE='webcam-laptop'
+        - DEVICE_NAME='extra-laptop'
+    restart: unless-stopped
+    ports:
+      - 3005:5000
+    volumes:
+      - ./wasmiot-supervisor/host_app:/app/host_app
+      - ./example/device1/configs:/app/configs
+      - ./example/device1/modules:/app/modules
+      - ./example/device1/output:/app/output
+    networks:
+      - wasmiot-net2
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 4G
+
+networks:
+  wasmiot-net2:
+    external: true

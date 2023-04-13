@@ -1,0 +1,47 @@
+version: '3.7'
+
+services:
+  orchestrator:
+    build:
+      context: fileserv
+      dockerfile: Dockerfile-orchestrator
+    restart: unless-stopped
+    ports:
+      - 3000:3000
+    command: nodejs ./server.js
+    environment:
+      CONFIG_MONGODB_ADMINUSERNAME: root
+      CONFIG_MONGODB_ADMINPASSWORD: example
+    networks:
+      - wasmiot-net1
+
+  mongo:
+    image: mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    volumes:
+      - mongo-config:/DATA/CONFIGDB
+      - mongo-db:/DATA/DB
+    networks:
+      - wasmiot-net1
+
+  mdns-reflector:
+    image: flungo/avahi
+    restart: unless-stopped
+    environment:
+      REFLECTOR_ENABLE_REFLECTOR: "yes"
+    networks:
+      - wasmiot-net1
+      - wasmiot-net2
+
+volumes:
+  mongo-config:
+  mongo-db:
+
+networks:
+  wasmiot-net1:
+    external: true
+  wasmiot-net2:
+    external: true
