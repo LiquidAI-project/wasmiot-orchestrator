@@ -1,0 +1,33 @@
+# Install a Python virtual environment with all requirements
+FROM ubuntu:23.04 AS builder
+
+RUN apt-get update
+RUN apt-get -y upgrade
+
+RUN apt-get -y install build-essential curl cmake pkg-config libjpeg-dev libtiff5-dev libpng-dev libavcodec-dev libavformat-dev libswscale-dev libv4l-dev libxvidcore-dev libx264-dev libfontconfig1-dev libcairo2-dev libgdk-pixbuf2.0-dev libpango1.0-dev libgtk2.0-dev libgtk-3-dev libatlas-base-dev gfortran libhdf5-dev libhdf5-serial-dev libhdf5-103 2to3 python-is-python3 python3 python3-pip python3-venv python3-pyqt5 python3-dev
+# RUN apt-get -y install libjasper-dev
+RUN curl https://sh.rustup.rs -sSf > rust.sh
+RUN sh rust.sh -y
+RUN mv ~/.cargo/bin/* /usr/bin
+
+RUN python3 -m venv --upgrade-deps /python-venv
+
+COPY ["wasmiot-supervisor/requirements.txt", "wasmiot-supervisor/setup.py", "/"]
+RUN /python-venv/bin/pip3 install -r /requirements.txt
+RUN /python-venv/bin/pip3 uninstall -y pip
+
+
+# Setup the final image with the application code and the created Python virtual environment
+FROM ubuntu:23.04
+
+RUN apt-get update
+RUN apt-get -y upgrade
+
+RUN apt-get install -y python3-minimal
+COPY --from=builder /python-venv /python-venv
+
+RUN mkdir -p /app
+COPY wasmiot-supervisor/ /app/
+
+WORKDIR /app/host_app
+CMD ["python", "__main__.py"]

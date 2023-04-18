@@ -2,16 +2,19 @@ FROM python:3.10 AS base
 
 WORKDIR /app
 
+RUN curl https://sh.rustup.rs -sSf > rust.sh
+RUN sh rust.sh -y
+RUN mv ~/.cargo/bin/* /usr/bin
+
 # Copy needed files to app root for installing deps beforehand.
 COPY ["wasmiot-supervisor/requirements.txt", "wasmiot-supervisor/setup.py", "./"]
-
-RUN pip3 --disable-pip-version-check --no-cache-dir install -r requirements.txt
+RUN pip install -r requirements.txt
 
 # Copy the rest.
 COPY wasmiot-supervisor/ .
 
-ARG DEVICE_NAME
-ENV FLASK_APP ${DEVICE_NAME}
+# ARG DEVICE_NAME
+# ENV FLASK_APP ${DEVICE_NAME}
 
 # Move to correct directory for running the app (handles module paths imports).
 WORKDIR /app/host_app
