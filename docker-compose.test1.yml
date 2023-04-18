@@ -1,31 +1,31 @@
-version: '3.7'
+version: '3.4'
 
 services:
   orchestrator:
     build:
-      context: fileserv
-      dockerfile: Dockerfile-orchestrator
+      context: ./fileserv
+      dockerfile: ./Dockerfile
+      target: compose
     restart: unless-stopped
     ports:
       - 3000:3000
     command: nodejs ./server.js
     environment:
+      # TODO These should not be these + use a local .env file instead.
       CONFIG_MONGODB_ADMINUSERNAME: root
       CONFIG_MONGODB_ADMINPASSWORD: example
-    networks:
-      - wasmiot-net1
+      #CONFIG_MONGODB_URL: mongodb://root:example@mongo:27017/
 
   mongo:
-    image: mongo
+    image: mongo:4.4.20  # use Mongo 4 to avoid problems running in a virtual machine
     restart: unless-stopped
     environment:
+      # TODO These should not be these + use a local .env file instead.
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: example
     volumes:
       - mongo-config:/DATA/CONFIGDB
       - mongo-db:/DATA/DB
-    networks:
-      - wasmiot-net1
 
   mdns-reflector:
     image: flungo/avahi
@@ -33,15 +33,18 @@ services:
     environment:
       REFLECTOR_ENABLE_REFLECTOR: "yes"
     networks:
-      - wasmiot-net1
-      - wasmiot-net2
+      - default
+      - mobile
 
 volumes:
   mongo-config:
   mongo-db:
 
 networks:
-  wasmiot-net1:
-    external: true
-  wasmiot-net2:
+  # Network where orchestrator (which could in the future be separate from the
+  # "(web)server" and its routes?) lives in.
+  default:
+    name: wasmiot
+  mobile:
+    name: mobile
     external: true

@@ -23,3 +23,53 @@ This is for local testing using a single device running both the orchestrator an
 
 The mDNS discovery in the orchestrator is working due to the added mdns-reflector container.
 However, deployment does not work yet since the orchestrator tries to use IP address from the wasmiot-net2 network which is not accessible from the network orchestrator is deployed.
+
+## Successful test with Raspberry Pi
+
+Setup:
+
+- Orchestrator running in a Docker container inside a virtual machine (Ubuntu 22.04 Server) created with VirtualBox under Windows.
+- Supervisor running locally in a Raspberry Pi
+- Both the virtual machine and Raspberry Pi setup to have access to the same network provided by a mobile phone.
+
+Steps:
+
+- Create the virtual machine and setup the network connections. TODO: add some details here
+- Create an external Docker network that connects to the mobile network:
+
+    ```bash
+    docker network create \
+        --driver macvlan \
+        --subnet 192.168.43.0/24 \
+        --gateway 192.168.43.1 \
+        --opt parent=enp0s9 \
+        mobile
+    ```
+
+    Here `192.168.43.0/24` is the ip address range for the mobile network, `192.168.43.1` is the router address, `enp0s9` is the network interface that connects the virtual machine to the mobile network, and `mobile` is the Docker network name.
+
+- Add a mDNS reflector container that is in both orchestrator+Mongo network and mobile network (already done in the file `docker-compose.test1.yml`), and start the system (orchestrator+Mongo+reflector):
+
+    ```bash
+    docker compose -f docker-compose.test1.yml up --build
+    ```
+
+- To allow the deployment to work, apply a hack modification to the supervisor code that is going to be run on the Raspberry Pi:
+    - Add the following to the file `host_app/flask_app/app.py` in the `get_deployment` function just before the line `fetch_modules(modules)`:
+
+    ```python
+    modules = [
+        {
+            **module,
+            **{"url": (
+                module["url"].split(":")[0] +
+                f"://{request.environ['REMOTE_ADDR']}:" +
+                ":".join(module["url"].split(":")[2:])
+            )}
+        }
+        for module in modules
+    ]
+    ```
+
+- Start the supervisor application on the raspberry Pi.
+- The device should be discovered and the deployment should work.
