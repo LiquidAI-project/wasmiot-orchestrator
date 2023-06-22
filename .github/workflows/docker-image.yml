@@ -3,6 +3,8 @@ name: Orchestrator Docker Image
 on:
   workflow_dispatch:
   push:
+    branches: 
+      - "main"
 
 env:
   # github.repository as <account>/<repo>
