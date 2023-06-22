@@ -1,9 +1,8 @@
 name: Orchestrator Docker Image
 
 on:
+  workflow_dispatch:
   push:
-    branches: 
-      - "main"
 
 env:
   # github.repository as <account>/<repo>
@@ -35,7 +34,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: fileserv/
-          platforms: linux/amd64,linux/arm64
+          # platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ env.IMAGE_NAME }}:latest
 
@@ -43,6 +42,6 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          # platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ env.IMAGE_NAME }}:devcontainer

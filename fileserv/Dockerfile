@@ -1,6 +1,6 @@
 FROM "mcr.microsoft.com/devcontainers/javascript-node:0-18" AS app
 
-LABEL org.opencontainers.image.source=https://github.com/LiquidAI-project/wasmiot-orchestrator/
+LABEL org.opencontainers.image.source="https://github.com/LiquidAI-project/wasmiot-orchestrator" 
 
 WORKDIR /app/fileserv
 
