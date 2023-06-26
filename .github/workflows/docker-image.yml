@@ -36,18 +36,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # - name: Build and push fileserv
-      #   uses: docker/build-push-action@v4
-      #   with:
-      #     context: fileserv/
-      #     platforms: ${{ env.PLATFORMS }}
-      #     push: true
-      #     tags: ${{ env.IMAGE_NAME }}:latest
+      - name: Build and push fileserv
+        uses: docker/build-push-action@v4
+        with:
+          context: fileserv/
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:latest
 
       - name: Build and push devcontainer
         uses: devcontainers/ci@v0.3
         with:
-          # push: always
+          push: always
+          platform: ${{ env.PLATFORMS }}
           imageName: ${{ env.IMAGE_NAME }}
           imageTag: devcontainer
           #cacheFrom: ${{ env.IMAGE_NAME }}:devcontainer
