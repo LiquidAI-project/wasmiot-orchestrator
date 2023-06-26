@@ -10,19 +10,21 @@ services:
       - ${PUBLIC_PORT:-3000}:3000
     networks:
       default:
+    environment:
+      MONGO_HOST: ${MONGO_ROOT_USERNAME:-mongo}
+      MONGO_PORT: ${MONGO_PORT:-27017}
+      MONGO_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-root}
+      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-example}
     command: nodejs ./server.js
-    env_file:
-      - ./.env.example
-      - ./.env
-    
+
   mongo:
     image: mongo
     restart: unless-stopped
     networks:
       default:
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-example}
     command: mongod --port ${MONGO_PORT:-27017}
     volumes:
       - mongo-config:/DATA/CONFIGDB
