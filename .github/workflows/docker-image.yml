@@ -48,7 +48,8 @@ jobs:
         uses: devcontainers/ci@v0.3
         with:
           push: always
-          platform: ${{ env.PLATFORMS }}
+          # Platforms and push not supported :(
+          # platform: ${{ env.PLATFORMS }}
           imageName: ${{ env.IMAGE_NAME }}
           imageTag: devcontainer
           #cacheFrom: ${{ env.IMAGE_NAME }}:devcontainer
