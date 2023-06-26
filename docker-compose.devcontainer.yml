@@ -29,7 +29,6 @@ services:
     # Mounting overwrites files/directories in image.
       - .:/app
       - /var/run/docker.sock:/var/run/docker.sock
-      - wasmiot-orchestrator-vscode-ext:/home/node/.vscode-server/extensions
 
   mongo:
     extends:
@@ -39,7 +38,6 @@ services:
 volumes:
   mongo-config:
   mongo-db:
-  wasmiot-orchestrator-vscode-ext:
 
 networks:
   default:
