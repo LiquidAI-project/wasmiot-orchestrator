@@ -9,7 +9,7 @@ on:
 env:
   # github.repository as <account>/<repo>
   IMAGE_NAME: ghcr.io/liquidai-project/wasmiot-orchestrator
-  PLATFORMS: linux/amd64,linux/arm64
+  # PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
   build:
@@ -18,10 +18,24 @@ jobs:
       contents: read
       packages: write
 
+    strategy:
+        matrix:
+          platform:
+            - linux/amd64
+            - linux/arm64
+          architecture:
+            - x64
+            - arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: fileserv/package-lock.json
+          architecture: ${{ matrix.architecture }}
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
 
@@ -36,20 +50,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push fileserv
+      - name: Build and push fileserv for ${{ matrix.platform }}
         uses: docker/build-push-action@v4
         with:
           context: fileserv/
-          platforms: ${{ env.PLATFORMS }}
+          platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ env.IMAGE_NAME }}:latest
 
-      - name: Build and push devcontainer
+      - name: Build and push devcontainer for ${{ matrix.platform }}
         uses: devcontainers/ci@v0.3
         with:
           eventFilterForPush:
           push: always
-          platform: linux/amd64,linux/arm64
+          platform: ${{ matrix.platform }}
           imageName: ${{ env.IMAGE_NAME }}
           imageTag: devcontainer
           #cacheFrom: ${{ env.IMAGE_NAME }}:devcontainer
