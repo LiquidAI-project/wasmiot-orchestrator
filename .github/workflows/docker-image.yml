@@ -47,7 +47,7 @@ jobs:
       - name: Build and push devcontainer
         uses: devcontainers/ci@v0.3
         with:
-          push: true
+          # push: always
           imageName: ${{ env.IMAGE_NAME }}
           imageTag: devcontainer
           #cacheFrom: ${{ env.IMAGE_NAME }}:devcontainer
