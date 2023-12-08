@@ -1,349 +1,289 @@
-const { Console } = require('console'); //for better console output
-const { create } = require('domain');
-const util = require('util');
-
-
 const semver = require('semver');
-const { version } = require('os');
-const { versions } = require('process');
-path = require('path');
-fileSystem = require('fs');
+const path = require('path');
 
-var tree = [];
-//modules for testing
-var modules =
-    [{
-        "id": "dht22_logger",
-        "architecture": "aarch64",
-        "version": "1.0.0",
-        "platform": "linux",
-        "interfaces": ["humidity_sensor", "temperature_sensor"],
-        "dependencies": [{
-            "networking": {
-                "version": "1.0.0"
+
+
+
+const fs = require('fs');
+
+function createPackageDatabase(directoryPath) {
+    let packageDatabase = [];
+
+    function traverseDirectory(currentPath) {
+        // Read the contents of the current directory
+        const contents = fs.readdirSync(currentPath, { withFileTypes: true });
+
+        // Iterate over each item in the directory
+        contents.forEach(item => {
+            if (item.isDirectory()) {
+                // Construct the full path of the current item
+                const itemPath = path.join(currentPath, item.name);
+
+                // Check if the folder name follows the package-version pattern
+                const match = item.name.match(/^(.*)-(\d+\.\d+\.\d+)$/);
+                if (match) {
+                    // Add package information to the database
+                    packageDatabase.push({
+                        name: match[1],
+                        version: match[2],
+                        path: itemPath
+                    });
+                } else {
+                    // Recursively traverse nested directories
+                    traverseDirectory(itemPath);
+                }
             }
-        },
-        {
-            "supplement": {
-                "version": "1.0.0"
-            }
-        },
-        {
-            "test_module": {
-                "version": "1.0.0"
-            }
-        }
-
-        ],
-        "peripherals": ["dht22"]
-    },
-    {
-        "id": "networking",
-        "architecture": "aarch64",
-        "platform": "linux",
-        "interfaces": ["networking"],
-        "peripherals": [],
-        "dependencies": [{
-            "supplement": {
-                "version": "1.0.0"
-            }
-        }
-        ]
-    },
-    {
-        "id": "supplement",
-        "architecture": "aarch64",
-        "platform": "linux",
-        "interfaces": ["networking"],
-        "peripherals": [],
-        "dependencies": [{
-            "networking": {
-                "version": "1.0.0"
-            }
-        }]
-    }
-    ];
-
-
-var testModule = JSON.parse(getModuleWithVersion("dht22_logger", "1.0.2"));
-var testList = getAllDependencies(testModule, traversed = new Set());
-
-console.log(testList)
-
-// 
-function checkMatches(list, req) {
-    var matches = [];
-    for (var i in list) {
-
-
-        if (list[i].id == Object.keys(req)) {
-            matches.push(list[i].version)
-        }
-    }
-    return matches;
-};
-
-function getAllDependencies(module, traversed) {
-    let dependencies = module.dependencies || [];
-    let allDependencies = dependencies.map(dependency => {
-      let dep = Object.entries(dependency)[0];
-      let dependencyName = dep[0];
-      let dependencyVersion = dep[1].version;
-      let dependencyModule = JSON.parse(getModuleWithVersion(dependencyName, dependencyVersion));
-      if (traversed.has(`${dependencyModule.id}:${dependencyModule.version}`)) {
-        return [];
-      }
-      traversed.add(`${dependencyModule.id}:${dependencyModule.version}`);
-      return getAllDependencies(dependencyModule, traversed);
-    });
-    return [module].concat(allDependencies.flat());
-  }
-// Recursively builds a list of a module and its dependencies
-function makeTree(node, list = []) {
-    // Get the list of module dependencies
-    const reqs = node.dependencies;
-  
-    // Create an object for the current module and add it to the list
-    const module = {
-      id: node.id,
-      version: node.version,
-    };
-    list.push(module);
-  
-    // Recursively process each dependency
-    if (reqs.length > 0) {
-      for (const req of reqs) {
-        // Check if the dependency is already in the list
-        const depId = Object.keys(req)[0];
-        const depVersion = getValues(req, 'version')[0];
-        const depInList = getObjects(list, 'id', depId)[0];
-  
-        // If the dependency is not already in the list, add it
-        if (!depInList) {
-          makeTree(JSON.parse(getModuleWithVersion(depId, depVersion)), list);
-        }
-        // If the dependency is in the list but has a different version, add it as a separate item
-        else if (depInList.version !== depVersion) {
-          makeTree(JSON.parse(getModuleWithVersion(depId, depVersion)), list);
-        }
-      }
-    }
-  
-    return list;
-  }
-
-
-function getTree(node) {
-
-    let reqs = []
-    let h = {
-        dependencies: [],
-        id: node.id,
-        version: node.version
-    }
-
-
-    reqs = node.dependencies;
-
-    if (!isEmpty(node.dependencies[0])) {
-
-        node.dependencies.forEach((req) => {
-
-            var dependencyWithVersion =
-            {
-                id: Object.keys(req)[0],
-                version: getValues(req, "version")[0]
-            }
-
-            if (Object.keys(req)[0] == undefined) {
-                return {};
-            }
-            console.log(req)
-            console.log(getValues(req, "version"));
-            if (getValues(tree, 'id').includes(Object.keys(req)[0]) && !getValues(tree, 'version').includes(Object.keys(req)[0].version)) {
-
-
-                var position = Object.keys(tree).indexOf(Object.keys(req)[0]);
-
-
-                tree.push(dependencyWithVersion);
-                tree.push({ id: h.id, version: h.version });
-
-                return tree;
-            };
-
-            if (getValues(tree, 'id').includes(Object.keys(req)[0]) && getValues(tree, 'version').includes(Object.keys(req)[0].version)) {
-                console.log("AAAAAAAAAAAAAAAA");
-                return tree;
-
-            }
-
-
-
-
-            tree.push(dependencyWithVersion);
-            tree.push({ id: h.id, version: h.version });
-
-            h.dependencies.push(getTree(
-                JSON.parse(getModuleWithVersion(Object.keys(req)[0], getValues(req, "version")[0])), tree))
-        })
-
-        return tree;
-    }
-
-
-    h = {
-        id: node.id
-    }
-    return h;
-}
-
-
-
-//Groups a list of objects by matching keys  
-function groupBy(xs, key) {
-    return xs.reduce(function (rv, x) {
-        (rv[x[key]] = rv[x[key]] || []).push(x);
-        return rv;
-    }, {});
-}
-
-
-
-// Returns an array of values that match a certain key
-function getValues(obj, key) {
-    const values = [];
-  
-    for (const prop in obj) {
-      // Ignore inherited properties
-      if (!Object.prototype.hasOwnProperty.call(obj, prop)) {
-        continue;
-      }
-  
-      if (typeof obj[prop] === 'object') {
-        // Recursively get values for nested objects
-        values.push(...getValues(obj[prop], key));
-      } else if (prop === key) {
-        // Add the value to the array if the key matches
-        values.push(obj[prop]);
-      }
-    }
-  
-    return values;
-  }
-
-// Returns true if an object is empty, i.e., has no own properties
-function isEmpty(obj) {
-    // Check if the object has any own properties
-    for (const prop in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, prop)) {
-        // If the object has at least one own property, it is not empty
-        return false;
-      }
-    }
-  
-    return JSON.stringify(obj) === JSON.stringify({});
-  }
-
-
-
-// Returns a module as a JSON object based on its name and version from the local module library
-function getModuleWithVersion(modulename, version) {
-
-    // Returns the JSON for a module based on its name and version
-    function getModuleJSON(modulename, version) {
-      // If either `modulename` or `version` is falsy, log an error message and return the module with the same name.
-      if (!modulename || !version) {
-        console.log("No such version " + modulename + version);
-        return getModuleByName(modulename);
-      }
-      // Construct the file path for the module's `modulemetadata.json` file based on its name and version
-      const startpath = path.join(__dirname, 'modules');
-      const fixedVersion = modulename + "-" + version;
-      const truepath = path.join(startpath, modulename, fixedVersion, 'modulemetadata.json');
-      // Read the module metadata from the file system and parse it as JSON
-      return fileSystem.readFileSync(truepath, 'UTF-8', function (err, data) {
-        if (err) return console.log(err + "NO SUCH MODULE");
-        manifest = JSON.parse(data);
-      });
-    }
-  
-    return getModuleJSON(modulename, version);
-  }
-
-
-//@return module with matching name as json object
-function getModuleByName(modulename) {
-
-    //returns the json from a module based on the name
-    function getModuleJSON(modulename) {
-        let startpath = path.join(__dirname, 'modules');
-
-        var truepath = path.join(startpath, modulename, 'modulemetadata.json');
-        return fileSystem.readFileSync(truepath, 'UTF-8', function (err, data) {
-            if (err) return console.log(err + "NO SUCH MODULE");
-            manifest = JSON.parse(data);
         });
     }
 
-    return getModuleJSON(modulename);
+    traverseDirectory(directoryPath);
+    return packageDatabase;
+}
 
+// Example usage
+const database = createPackageDatabase('./modules');
+//test_path = findPackagePath("dht22_logger", "1.0.0", database);
+//testNode = createNodeFromMetadata(test_path);
+//const dependencyTree = resolveDependenciesWithBacktracking(testNode);
+//console.log(JSON.stringify(dependencyTree, null, 2));
+
+
+function parsePackageName (name, version = "1.0.0") {
+    return `${name}-${version}`;
 }
 
 
-//searches a tree recursively for an object matching the keyword
-function searchTree(element, matchingTitle) {
-    console.log(element);
-    console.log(matchingTitle)
-    if (element.ID == matchingTitle) {
-        return element;
-    } else if (element.ID != null) {
-        var i;
-        var result = null;
-        for (i = 0; result == null && i < element.dependencies.length; i++) {
-            result = searchTree(element.dependencies[i], matchingTitle);
+
+function createNodeFromName(nodeName) {
+    const [name, version] = nodeName.split('-');
+    return createNodeFromMetadata(findPackagePath(name, version, database));
+}
+
+
+/*
+Example of requirements
+requirements: [
+    { name: "dependencyPackage1", version: ">=2.0.0" },
+    { name: "dependencyPackage2", version: "^3.1.4" }
+*/
+const emptyNode = {
+    name: "",           // The name of the package
+    version: "",        // The version of the package
+    requirements: []    // An array of requirements, where each requirement has a name and a version
+};
+
+
+
+function createDependencyTreeNode(name, version, children = []) {
+    return { name, version, children };
+}
+
+
+function findPackagePath(packageName, version, packageDatabase) {
+    // Find the package in the database
+    const packageEntry = packageDatabase.find(pkg => 
+        pkg.name === packageName && pkg.version === version
+    );
+
+    // Return the path if the package is found, otherwise return null
+    return packageEntry ? packageEntry.path : null;
+}
+
+
+
+function createNodeFromMetadata(modulePath) {
+    // Construct the full path to the modulemetadata.json file
+    const metadataFilePath = path.join(modulePath, 'modulemetadata.json');
+
+    try {
+        // Read the contents of the file
+        const rawData = fs.readFileSync(metadataFilePath, 'utf8');
+        
+        // Parse the JSON content
+        const metadata = JSON.parse(rawData);
+
+        // Construct the node object
+        const node = {
+            name: metadata.id,
+            version: metadata.version,
+            requirements: metadata.dependencies.map(dep => {
+                const [name, details] = Object.entries(dep)[0];
+                return { name, version: details.version };
+            })
+        };
+
+        return node;
+    } catch (error) {
+        console.error(`Error reading or parsing module metadata: ${error}`);
+        return null;
+    }
+}
+
+
+
+
+function isVersionCompatible(node, packageRequires) {
+    for (const requirement of node.requirements) {
+        const packageRequirement = packageRequires.find(req => req.name === requirement.name);
+
+        // If the requirement is not found in packageRequires or the version is not compatible, return false
+        if (!packageRequirement || !someVersionCheckFunction(requirement.version, packageRequirement.version)) {
+            return false;
         }
-        return result;
     }
-    return null;
+    return true;
 }
 
-//return an array of values that match on a certain key
-function getValues(obj, key) {
-    var objects = [];
-    for (var i in obj) {
-        if (!obj.hasOwnProperty(i)) continue;
-        if (typeof obj[i] == 'object') {
-            objects = objects.concat(getValues(obj[i], key));
-        } else if (i == key) {
-            objects.push(obj[i]);
+function someVersionCheckFunction(requiredVersion, availableVersion) {
+    // Use semver to check if the availableVersion satisfies the requiredVersion
+    return semver.satisfies(availableVersion, requiredVersion);
+}
+
+
+
+function getPackageDetails(packageName, version) {
+    // This function should return the package details, including its dependencies,
+    // for a given package and version.
+    // This is a placeholder implementation.
+    return { dependencies: [] };
+}
+
+function resolveDependenciesWithBacktracking(node) {
+    let resolved = new Set();
+    let attempted = new Set();
+    let tree = resolveWithBacktracking(node, resolved, attempted);
+    return tree;
+}
+
+function resolveWithBacktracking(node, resolved, attempted) {
+    const nodeKey = `${node.name}@${node.version}`;
+
+    if (resolved.has(nodeKey)) {
+        return null;  // Already resolved
+    }
+
+    if (attempted.has(nodeKey)) {
+        return null;  // Circular dependency detected
+    }
+
+    attempted.add(nodeKey);
+
+    let children = [];
+    for (let dependency of node.requirements) {
+        const availableVersions = getAvailableVersions(dependency.name);
+        const compatibleVersion = findCompatibleVersion(dependency.version, availableVersions);
+
+        if (!compatibleVersion) {
+            return null;  // No compatible version found
+        }
+
+        const dependencyNode = createNodeFromMetadata(findPackagePath(dependency.name, compatibleVersion, database));
+        if (!dependencyNode) {
+            return null;  // Dependency node couldn't be created
+        }
+
+        let child = resolveWithBacktracking(dependencyNode, resolved, attempted);
+        if (child) {
+            children.push(child);
         }
     }
-    return objects;
+
+    resolved.add(nodeKey);
+    return createDependencyTreeNode(node.name, node.version, children);
 }
 
+function findCompatibleVersion(versionRange, availableVersions) {
+    return availableVersions.find(version => semver.satisfies(version, versionRange));
+}
 
-//return an array of objects according to key, value, or key and value matching
-function getObjects(obj, key, val) {
-    var objects = [];
-    for (var i in obj) {
-        if (!obj.hasOwnProperty(i)) continue;
-        if (typeof obj[i] == 'object') {
-            objects = objects.concat(getObjects(obj[i], key, val));
-        } else
-            //if key matches and value matches or if key matches and value is not passed (eliminating the case where key matches but passed value does not)
-            if (i == key && obj[i] == val || i == key && val == '') { //
-                objects.push(obj);
-            } else if (obj[i] == val && key == '') {
-                //only add if the object is not already in the array
-                if (objects.lastIndexOf(obj) == -1) {
-                    objects.push(obj);
-                }
-            }
+function isPackageAvailable(packageName, versionRange, packageDatabase) {
+    // Iterate through the package database
+    for (const package of packageDatabase) {
+        node = package.node;
+        // Check if the package name matches and the version is within the specified range
+        if (node.name === packageName && semver.satisfies(node.version, versionRange)) {
+            return true;
+        }
     }
-    return objects;
+    return false;
 }
 
 
-exports.groupBy = groupBy;
-exports.getAllDependencies = getAllDependencies;
+function getAvailableVersions(packageName, database = null) {
+    // If the database is not provided, create it from the './modules' directory
+    if (!database) {
+        database = createPackageDatabase('./modules');
+    }
+
+    // Continue with the rest of the function
+    const filteredPackages = database.filter(pkg => pkg.name === packageName);
+    const versions = filteredPackages.map(pkg => pkg.version);
+
+    return versions;
+}
+
+
+
+
+////////////////////////// TEST CASES //////////////////////////
+
+const testCases = [
+    {
+        node: {
+            name: "packageA",
+            version: "1.2.0",
+            requirements: [
+                { name: "dependency1", version: "^1.0.0" },
+                { name: "dependency2", version: ">=2.0.0" }
+            ]
+        },
+        packageRequires: [
+            { name: "dependency1", version: "1.1.0" },
+            { name: "dependency2", version: "2.5.0" }
+        ],
+        expected: true,
+        description: "Test Case 1: All dependencies are compatible"
+    },
+    {
+        node: {
+            name: "packageB",
+            version: "2.0.0",
+            requirements: [
+                { name: "dependency1", version: "^3.0.0" }
+            ]
+        },
+        packageRequires: [
+            { name: "dependency1", version: "2.9.0" }
+        ],
+        expected: false,
+        description: "Test Case 2: Incompatible version of dependency1"
+    },
+    {
+        node: {
+            name: "packageC",
+            version: "3.3.0",
+            requirements: []
+        },
+        packageRequires: [],
+        expected: true,
+        description: "Test Case 3: No dependencies (always compatible)"
+    },
+    // Add more test cases as needed
+];
+
+// Function to run the test cases
+function runTestCases() {
+    testCases.forEach((testCase, index) => {
+        const result = isVersionCompatible(testCase.node, testCase.packageRequires);
+        const pass = result === testCase.expected;
+        console.log(`Test Case ${index + 1}: ${testCase.description} - ${pass ? "Pass" : "Fail"}`);
+    
+    });
+    console.log(isPackageAvailable("packageA", "^1.0.0", testCases)); // true
+}
+
+
+
+
+// Run the tests
+//runTestCases();

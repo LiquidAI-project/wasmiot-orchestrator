@@ -4,6 +4,9 @@ const { ObjectId } = require("mongodb");
 
 const constants = require("../constants.js");
 const utils = require("../utils.js");
+const { resolve } = require("path");
+const depTree = require('../dependencytree.js');
+
 
 
 class DeviceNotFound extends Error {
@@ -159,6 +162,7 @@ class Orchestrator {
                 console.error(`Passed in module-ID '${step.module}' not compatible as ObjectID. Using it as 'name' instead`);
                 filter.name = step.module;
             }
+           // resolvedModule = depTree.esolveDependenciesWithBacktracking(parsePackageName(step.module))
 
             // Fetch the modules from remote URL similarly to how Docker fetches
             // from registry/URL if not found locally.
