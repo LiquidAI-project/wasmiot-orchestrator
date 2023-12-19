@@ -1,11 +1,11 @@
 const express = require("express");
 
 
-let database = null;
 let deviceDiscovery = null;
 
+let deviceCollection = null;
 function setDatabase(db) {
-    database = db;
+    deviceCollection = db.collection("device");
 }
 
 function setDeviceDiscovery(dd) {
@@ -19,18 +19,19 @@ function setDeviceDiscovery(dd) {
  */
 const getDevices = async (request, response) => {
     // TODO What should this ideally return? Only IDs and descriptions?
-    response.json(await database.read("device"));
-}
+    let devices = await (await deviceCollection.find()).toArray();
+    response.json(devices);
+};
 
 /**
  * NOTE TEMPORARY route to easily delete all devices from database (in case of
  * hostname-changes etc.)
  */
-const deleteDevices = (request, response) => {
-    database.delete("device", {});
+const deleteDevices = async (request, response) => {
+    let { deletedCount } = await deviceCollection.deleteMany();
     response
-        .status(202) // Accepted.
-        .json({ success: "deleting all devices" });
+        .status(200)
+        .json({ deletedCount });
 }
 
 /**

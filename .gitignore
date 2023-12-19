@@ -141,6 +141,9 @@ fileserv/files/exec/
 # Place where the example devices saves downloaded WASM-modules.
 example/**/modules/
 
+# Place where the datalist -usage-example save temporary files.
+example/datalist/tmp/
+
 *.jpeg
 
 # Projects that generate Wasm for tests.
@@ -150,3 +153,10 @@ target/
 
 # VSCode NodeJS profiling file.
 *.cpuprofile
+
+# Directory where the npm-script 'generate' places the automatically generated
+# API-client code.
+generatedApiClient/
+
+# Typescript built directory.
+built/

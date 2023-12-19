@@ -1,0 +1,40 @@
+{
+    "a": {
+        "parameters": [
+            { "name": "param0", "type": "integer" },
+            { "name": "param1", "type": "float" }
+        ],
+        "method": "POST",
+        "output": "integer",
+        "mounts": [
+            {
+                "name": "deployFile",
+                "mediaType": "application/octet-stream",
+                "stage": "deployment"
+            },
+            {
+                "name": "execFile",
+                "mediaType": "application/octet-stream",
+                "stage": "execution"
+            }
+        ]
+    },
+    "b": {
+        "parameters": [],
+        "method": "GET",
+        "output": "float",
+        "mounts": []
+    },
+    "c": {
+        "parameters": [],
+        "method": "POST",
+        "output": "integer",
+        "mounts": [
+            {
+                "name": "outFile",
+                "mediaType": "application/octet-stream",
+                "stage": "output"
+            }
+        ]
+    }
+}

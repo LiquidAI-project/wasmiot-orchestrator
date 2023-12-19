@@ -1,0 +1,57 @@
+type: object
+required:
+  - _id
+  - name
+  - communication
+  - description
+  - health
+properties:
+  id:
+    type: string
+  name:
+    type: string
+  communication:
+    type: object
+    properties:
+      addresses:
+        type: array
+        items:
+          type: string
+      port:
+        type: integer
+  description:
+    type: object
+    properties:
+      platform:
+        type: object
+        properties:
+          memory:
+            type: object
+            properties:
+              bytes:
+                type: integer
+          cpu:
+            type: object
+            properties:
+              humanReadableName:
+                type: string
+              clockSpeed:
+                type: object
+                properties:
+                  Hz:
+                    type: integer
+      supervisorInterfaces:
+        type: array
+        items:
+          description: Name of function imported by host e.g. 'print' (from wasm3_api) or 'fd_read' (from WASI).
+          type: string
+  health:
+    type: object
+    properties:
+      report:
+        type: object
+        properties:
+          status:
+            type: string
+      timeOfQuery:
+        type: string

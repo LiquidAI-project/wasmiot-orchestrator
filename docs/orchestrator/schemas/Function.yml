@@ -1,0 +1,15 @@
+type: object
+required:
+  - name
+  - parameterTypes
+  - outputType
+properties:
+  name:
+    type: string
+  parameterTypes:
+    type: array
+    items:
+      $ref: "./PrimitiveType.yml"
+  outputType:
+    $ref: "./PrimitiveType.yml"
+

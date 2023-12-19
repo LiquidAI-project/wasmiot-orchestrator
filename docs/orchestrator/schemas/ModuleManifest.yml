@@ -1,0 +1,38 @@
+description: |
+  Describes a module at a bit higher level and used in creating a M2M
+  compatible description
+type: object
+properties:
+  [functionName]:
+    description: |
+      Describes a function at a bit higher level and used in creating an
+      endpoint description
+    type: object
+    required:
+      - method
+    properties:
+      method:
+        type: string
+      parameters:
+        type: array
+        items:
+          $ref: "./PrimitiveType.yml"
+      output:
+        $ref: "./PrimitiveType.yml"
+      mounts:
+        type: array
+        items:
+          type: object
+          required:
+            - name
+            - mediaType
+            - stage
+          properties:
+            name:
+              type: string
+            mediaType:
+              type: string
+              enum: [application/octet-stream, image/jpeg]
+            stage:
+              type: string
+              enum: [deployment, execution, output]

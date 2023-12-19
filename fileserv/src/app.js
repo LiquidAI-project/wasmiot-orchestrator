@@ -17,7 +17,7 @@ let app;
  * initialize the app.
  * @param {*} appDependencies
  */
-function init(appDependencies) {
+async function init(appDependencies) {
     app = express();
 
     // Sentry should be initialized before any other middleware.
@@ -25,7 +25,7 @@ function init(appDependencies) {
         checkSentry();
     }
 
-    setRoutes(appDependencies);
+    await setRoutes(appDependencies);
 
     return app;
 }
@@ -33,7 +33,7 @@ function init(appDependencies) {
 /**
  * Note: call-order matters!
  */
-function setRoutes(routeDependencies) {
+async function setRoutes(routeDependencies) {
     // Serve the frontend files for use.
     app.use(express.static(FRONT_END_DIR));
 
@@ -52,16 +52,17 @@ function setRoutes(routeDependencies) {
     // discovery available which should be done before initializing this
     // app...
     const { init: initRoutes } = require("../routes");
-    let routes = initRoutes(routeDependencies);
+    let routes = await initRoutes(routeDependencies);
     app.use("/file/device",   routes.device);
     app.use("/file/module",   routes.modules);
     app.use("/file/manifest", routes.deployment);
     app.use("/execute",       routes.execution);
+    app.use("",               routes.coreServicesRouter);
 
     // NOTE: This is for testing if for example an image file needs to be available
     // after execution of some deployed work.
     app.get("/files/:myPath", (request, response) => {
-        response.sendFile("./files/"+request.params.myPath, { root: "." });
+        response.sendFile("./files/" + request.params.myPath, { root: "." });
     });
 
     // Server utils code for frontend.

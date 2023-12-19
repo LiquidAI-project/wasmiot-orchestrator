@@ -1,5 +1,7 @@
 const fs = require("fs");
 
+const { ObjectId } = require("mongodb");
+
 const constants = require("../constants.js");
 const utils = require("../utils.js");
 
@@ -128,7 +130,11 @@ class Orchestrator {
     * devices to pull modules from.
     */
     constructor(dependencies, options) {
-        this.database = dependencies.database;
+        let database = dependencies.database;
+        this.deviceCollection = database.collection("device");
+        this.moduleCollection = database.collection("module");
+        this.deploymentCollection = database.collection("deployment");
+
         this.packageManagerBaseUrl = options.packageManagerBaseUrl || constants.PUBLIC_BASE_URI;
         if (!options.deviceMessagingFunction) {
             throw new utils.Error("method for communicating to devices not given");
@@ -139,13 +145,25 @@ class Orchestrator {
     async solve(manifest, resolving=false) {
         // Gather the devices and modules attached to deployment in "full"
         // (i.e., not just database IDs).
-        let availableDevices = await this.database.read("device");
+        let availableDevices = await (await this.deviceCollection.find()).toArray();
         // The original deployment should be saved to database as is with the
         // IDs TODO: Exactly why should it be saved?.
         let hydratedManifest = structuredClone(manifest);
         for (let step of hydratedManifest.sequence) {
             step.device = availableDevices.find(x => x._id.toString() === step.device);
-            step.module = (await this.database.read("module", { _id: step.module }))[0];
+            // Find with id or name to support finding core modules more easily.
+            let filter = {};
+            try {
+                filter._id = ObjectId(step.module)
+            } catch (e) {
+                console.error(`Passed in module-ID '${step.module}' not compatible as ObjectID. Using it as 'name' instead`);
+                filter.name = step.module;
+            }
+
+            // Fetch the modules from remote URL similarly to how Docker fetches
+            // from registry/URL if not found locally.
+            // TODO: Actually use a remote-fetch.
+            step.module = await this.moduleCollection.findOne(filter);
         }
 
         //TODO: Start searching for suitable packages using saved file.
@@ -159,17 +177,15 @@ class Orchestrator {
         if (resolving) {
             deploymentId = manifest._id;
         } else {
-            deploymentId = (await this.database.create("deployment", [manifest]))
-                .insertedIds[0];
+            deploymentId = (await this.deploymentCollection.insertOne(manifest)).insertedId;
         }
 
         let solution = createSolution(deploymentId, assignedSequence, this.packageManagerBaseUrl)
 
         // Update the deployment with the created solution.
-        this.database.update(
-            "deployment",
-            { _id: deploymentId },
-            solution
+        this.deploymentCollection.updateOne(
+            { _id: ObjectId(deploymentId) },
+            { $set: solution }
         );
 
         return resolving ? solution : deploymentId;
@@ -180,8 +196,7 @@ class Orchestrator {
 
         let requests = [];
         for (let [deviceId, manifest] of Object.entries(deploymentSolution)) {
-            let device = (await this.database
-                .read("device", { _id: deviceId }))[0];
+            let device = await this.deviceCollection.findOne({ _id: ObjectId(deviceId) });
 
             if (!device) {
                 throw new DeviceNotFound("", deviceId);
@@ -457,9 +472,13 @@ function mountsFor(modulee, func, endpoint) {
     if (response.media_type === 'multipart/form-data') {
         response_files = MountPathFile.listFromMultipart(response.response_body);
     } else if (constants.FILE_TYPES.includes(response.media_type)) {
-        let [path, _] = Object.entries(
+        let outputMount = Object.entries(
                 modulee.mounts[func]
             ).find(([_, mount]) => mount.stage === MountStage.OUTPUT);
+        if (!outputMount) {
+            throw `output mount of '${response.media_type}' expected but is missing`;
+        }
+        let path = outputMount[0];
         response_files = [new MountPathFile(path, response.media_type, MountStage.OUTPUT)]
     }
     // Add the output stage and required'ness to all these.
@@ -495,9 +514,25 @@ function fetchAndFindResources(sequence, availableDevices) {
     let selectedModules = [];
     let selectedDevices = [];
 
+    // Fetch the orchestrator device in advance if there are any core modules
+    // to be used.
+    let orchestratorDeviceIdx = availableDevices.findIndex(x => x.name === "orchestrator");
+    let orchestratorDevice = availableDevices[orchestratorDeviceIdx];
+    // At the same time, remove the orchestrator from the list of available
+    // devices (i.e., Wasm-workloads shouldn't be possible to be deployed on
+    // orchestrator).
+    availableDevices.splice(orchestratorDeviceIdx, 1);
+
     // Iterate all the items in the request's sequence and fill in the given
     // modules and devices or choose most suitable ones.
     for (let [device, modulee, funcName] of sequence.map(Object.values)) {
+        // If the module and device are orchestrator-based, return immediately.
+        if (modulee.isCoreModule) {
+            selectedModules.push(modulee);
+            selectedDevices.push(orchestratorDevice);
+            continue;
+        }
+
         // Selecting the module automatically is useless, as they can
         // only do what their exports allow. So a well formed request should
         // always contain the module-id as well.
@@ -595,5 +630,30 @@ function moduleData(modulee, packageBaseUrl) {
     };
 }
 
+const ORCHESTRATOR_ADVERTISEMENT = {
+    name: "orchestrator",
+    type: constants.DEVICE_TYPE,
+    port: 3000,
+};
 
-module.exports = Orchestrator;
+const ORCHESTRATOR_WASMIOT_DEVICE_DESCRIPTION = {
+    "platform": {
+        "memory": {
+            "bytes": null
+        },
+        "cpu": {
+            "humanReadableName": null,
+            "clockSpeed": {
+                "Hz": null
+            }
+        }
+    },
+    "supervisorInterfaces": []
+};
+
+
+module.exports = {
+    Orchestrator,
+    ORCHESTRATOR_ADVERTISEMENT,
+    ORCHESTRATOR_WASMIOT_DEVICE_DESCRIPTION
+};

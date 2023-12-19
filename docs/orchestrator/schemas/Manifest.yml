@@ -1,0 +1,31 @@
+description: Document that a deployment is created based on
+type: object
+required:
+- name
+- sequence
+properties:
+  name:
+    type: string
+  sequence:
+    type: array
+    items:
+      description: Describes a workload that should appear in the deployment
+      type: object
+      required:
+        - device
+        - module
+        - function
+      properties:
+        device:
+          description: |
+            The ID of the device that the workload should be deployed to.
+          type: string
+        module:
+          description: A module ID
+          type: string
+        function:
+          description: |
+            The name of the function that should be callable on the node. The
+            function must be exported by the module.
+          type: string
+

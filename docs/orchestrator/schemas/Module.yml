@@ -1,0 +1,17 @@
+type: object
+required:
+  - id
+  - name
+properties:
+  id:
+    type: string
+  name:
+    type: string
+  description:
+    $ref: "./ModuleDescription.yml"
+  mounts:
+    type: object
+    items:
+      type: string
+      format: binary
+

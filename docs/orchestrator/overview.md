@@ -1,5 +1,17 @@
-# Overview
-TODO what to put here?
+# Documentation overview
+The orchestrator uses [WebAssembly modules](/docs/modules.md) submitted through
+[its API](/docs/orchestrator/api.yml) and [IoT-devices
+found](/docs/orchestrator/discovery.md) via mDNS to create a
+[solution](/docs/orchestrator/deployment.md) for connecting together
+microservices. The solution is meant to be dynamic meaning that changes in the
+functions or performance of IoT-devices leads to automatically re-solving, thus
+keeping the application (composed from microservices) functional without the
+need for human intervention.
+
+This collection of documents gives more in-depth information on how this is
+achieved at both conceptual and implementation-specific levels. The description
+isn't all-encompassing and some things aren't yet implemented, so reading the
+documentation alone is not sufficient for getting to know the system!
 
 ## Miscellaneous
 ### Orchestrator implementation notes

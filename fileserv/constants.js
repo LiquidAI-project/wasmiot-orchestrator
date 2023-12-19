@@ -39,6 +39,18 @@ const FILE_TYPES = [
     "application/octet-stream"
 ];
 
+/**
+ * Special name of an init function, that is expected to be called at deployment
+ * time by the supervisor before any other of a module's functions. The
+ * init-function allows the __module itself__ to do any initialization that is
+ * needed instead of relying on what the supervisor performs (e.g., mounting).
+ *
+ * Files that the function creates as side-effects are then regarded as a
+ * "deployment"-stage mount for all the needed functions to access. These files
+ * could for example contain database-initialization IDs or other things that
+ * are needed or convenient to compute at run-time.
+ */
+const WASMIOT_INIT_FUNCTION_NAME = "_wasmiot_init";
 
 module.exports = {
     MONGO_URI,
@@ -55,5 +67,6 @@ module.exports = {
     DEVICE_HEALTH_CHECK_INTERVAL_MS: 180*1000,
     EXECUTION_INPUT_DIR,
     UTILS_PATH,
-    FILE_TYPES
+    FILE_TYPES,
+    WASMIOT_INIT_FUNCTION_NAME,
 };

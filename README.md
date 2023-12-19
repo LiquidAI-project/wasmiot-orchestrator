@@ -11,7 +11,16 @@ orchestrating logic for WebAssembly-based microservices.
 - RESTful API
 - Web GUI
 
-## Installation
+## Install Wasm-IoT orchestrator
+
+### Prerequisites
+- [Docker engine](https://docs.docker.com/engine/install/)
+  - If you're on Ubuntu the version available with `apt` (at the time of writing `Docker version 24.0.5, build 24.0.5-0ubuntu1~22.04.1`)
+    can be used.
+- [`docker compose`](https://docs.docker.com/compose/)
+  - Again the version available with `apt` (at the time of writing `docker-compose version 1.29.2`) can be used. 
+
+### Installation
 Clone the project and its submodules and use `docker compose` to build and start the server.
 
 Using Windows 10 you could do the following:
@@ -33,12 +42,14 @@ cp .env.example .env
 docker compose up --build
 ```
 
+On Linux the process is similar, except for the explicit `clone` of `wasmiot-supervisor` submodule.
+
 ### Supervisor (git submodule)
 The supervisor is a _git submodule_ so you should clone and work on it
 by following the command's documentation:
 https://git-scm.com/book/en/v2/Git-Tools-Submodules
 
-__On Windows__ the submodule-related commands like `git submodule update` or
+As mentioned above in installation, __on Windows__ the submodule-related commands like `git submodule update` or
 `git pull --recurse-submodule` might complain about unauthorized access. Some
 workarounds to these issues are to:
 - use `git` from WSL

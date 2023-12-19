@@ -1,0 +1,15 @@
+  description: M2M-communication compatible description of module
+    and its functions installable on devices
+  type: object
+  required:
+    - imports
+    - exports
+  properties:
+    imports:
+      type: array
+      items:
+        $ref: "./Function.yml"
+    exports:
+      type: array
+      items:
+        $ref: "./Function.yml"

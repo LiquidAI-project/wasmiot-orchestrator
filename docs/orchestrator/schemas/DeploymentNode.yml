@@ -1,0 +1,16 @@
+description: Information for a device to set itself up for a workload
+type: object
+required:
+  - modules
+  - peers
+properties:
+  modules:
+    type: array
+    items:
+      $ref: "./ModuleDescription.yml"
+  peers:
+    description: |
+      An array of device IDs that are expected to have connection to and from this node
+    type: array
+    items:
+      type: string

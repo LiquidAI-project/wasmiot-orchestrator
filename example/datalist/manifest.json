@@ -1,0 +1,10 @@
+{
+    "name": "Data pusher",
+    "sequence": [
+        {
+            "device": null,
+            "module": "Datalist",
+            "func": "push"
+        }
+    ]
+}

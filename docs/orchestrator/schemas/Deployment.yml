@@ -1,0 +1,14 @@
+description: |
+  Contains information about a deployment and its current manifest
+type: object
+required:
+  - id
+  - manifest
+  - solution
+properties:
+  id:
+    type: string
+  manifest:
+    $ref: "./Manifest.yml"
+  solution:
+    $ref: "./DeploymentSolution.yml"

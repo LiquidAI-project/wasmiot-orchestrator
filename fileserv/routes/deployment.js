@@ -1,11 +1,13 @@
 const express = require("express");
+const { ObjectId } = require("mongodb");
+
 
 const utils = require("../utils.js");
 
-let database = null;
+let deploymentCollection = null;
 
 function setDatabase(db) {
-    database = db;
+    deploymentCollection = db.collection("deployment");
 }
 
 let orchestrator = null;
@@ -18,11 +20,15 @@ function setOrchestrator(orch) {
  * Validate manifest (this is static typing manually).
  */
 const validateManifest = (mani) => {
-    console.assert(typeof mani.name === "string", "manifest must have a name");
-    console.assert(typeof mani.sequence === "object" && mani.sequence instanceof Array, "manifest must have a sequence of operations");
+    if (!(typeof mani.name === "string"))
+        { throw "manifest must have a name"; }
+    if (!(typeof mani.sequence === "object" && mani.sequence instanceof Array))
+        { throw "manifest must have a sequence of operations"; }
     for (let node of mani.sequence) {
-        console.assert(typeof node.module === "string", "manifest node must have a module");
-        console.assert(typeof node.func === "string", "manifest node must have a function");
+        if (!(typeof node.module === "string"))
+            { throw "manifest node must have a module"; }
+        if (!(typeof node.func === "string"))
+            { throw "manifest node must have a function"; }
     }
 }
 
@@ -31,10 +37,9 @@ const validateManifest = (mani) => {
  */
 const getDeployment = async (request, response) => {
     // FIXME Crashes on bad _format_ of id (needs 12 byte or 24 hex).
-    let doc = (await database.read(
-        "deployment",
-        { _id: request.params.deploymentId }
-    ))[0];
+    let doc = await deploymentCollection.findOne(
+        { _id: ObjectId(request.params.deploymentId) }
+    );
 
     if (doc) {
         response.json(doc);
@@ -50,7 +55,8 @@ const getDeployment = async (request, response) => {
  */
 const getDeployments = async (request, response) => {
     // TODO What should this ideally return? Only IDs and descriptions?
-    response.json(await database.read("deployment"));
+    let deployments = await (await deploymentCollection.find()).toArray();
+    response.json(deployments);
 }
 
 /**
@@ -60,20 +66,32 @@ const getDeployments = async (request, response) => {
  */
 const createDeployment = async (request, response) => {
     let manifest = request.body;
-    validateManifest(manifest);
+    try {
+        validateManifest(manifest);
+    } catch (err) {
+        let errorMsg = "Failed validating manifest";
+        console.error(errorMsg, err);
+        response
+            .status(400)
+            .json(new utils.Error(errorMsg, err));
+        return;
+    }
 
     try {
         let deploymentId = await orchestrator.solve(manifest);
 
-        response.status(201).json({ id: deploymentId });
+        // NOTE: Sending plain text, not e.g., JSON! (This removes the need to
+        // parse the ID from some structural format.)
+        response.set("Content-Type", "text/plain");
+        response.status(201).send(deploymentId);
     } catch (err) {
-        errorMsg = "Failed constructing solution for manifest" + err;
+        let errorMsg = "Failed constructing solution for manifest";
 
-        console.error(errorMsg, err.stack);
+        console.error(errorMsg, err, err.stack);
 
         response
             .status(500)
-            .json(new utils.Error(errorMsg));
+            .json(new utils.Error(errorMsg, err));
     }
 }
 
@@ -84,10 +102,9 @@ const tryDeploy = async (deploymentDoc, response) => {
         console.log("Deploy-responses from devices: ", responses);
 
         // Update the deployment to "active" status.
-        await database.update(
-            "deployment",
-            { _id: deploymentDoc._id },
-            { active: true }
+        await deploymentCollection.updateOne(
+            { _id: ObjectId(deploymentDoc._id) },
+            { $set: { active: true } }
         );
 
         response.json({ deviceResponses: responses });
@@ -120,9 +137,15 @@ const tryDeploy = async (deploymentDoc, response) => {
  *  deployment.
  */
 const deploy = async (request, response) => {
-    let deploymentDoc = (await database
-        .read("deployment", { _id: request.params.deploymentId }))[0];
+    let filter = {};
+    try {
+        filter._id = ObjectId(request.params.deploymentId);
+    } catch (e) {
+        console.error(`Passed in deployment-ID '${request.params.deploymentId}' not compatible as ObjectID. Using it as 'name' instead`);
+        filter.name = request.params.deploymentId;
+    }
 
+    let deploymentDoc = await deploymentCollection.findOne(filter);
     if (!deploymentDoc) {
         response
             .status(404)
@@ -137,8 +160,10 @@ const deploy = async (request, response) => {
  * Delete all the deployment manifests from database.
  */
 const deleteDeployments = async (request, response) => {
-    await database.delete("deployment");
-    response.status(204).send();
+    let { deletedCount } = await deploymentCollection.deleteMany();
+    response
+        .status(200)
+        .json({ deletedCount });
 }
 
 /**
@@ -148,7 +173,8 @@ const deleteDeployments = async (request, response) => {
  * @param {*} response
  */
 const updateDeployment = async (request, response) => {
-    let oldDeployment = (await database.read("deployment", { _id: request.params.deploymentId }))[0];
+    let oldDeployment = await deploymentCollection
+        .findOne({ _id: ObjectId(request.params.deploymentId) });
 
     if (!oldDeployment) {
         response

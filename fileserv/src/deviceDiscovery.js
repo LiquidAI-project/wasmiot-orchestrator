@@ -6,6 +6,7 @@
 const bonjour = require("bonjour-service");
 const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, DEVICE_SCAN_DURATION_MS, DEVICE_SCAN_INTERVAL_MS } = require("../constants.js");
 
+const { ORCHESTRATOR_ADVERTISEMENT } = require("./orchestrator.js");
 
 /**
  * Thing running the Wasm-IoT supervisor.
@@ -44,7 +45,7 @@ class DeviceManager {
         }
         this.bonjourInstance = new bonjour.Bonjour();
         this.browser = null;
-        this.database = database;
+        this.deviceCollection = database.collection("device");
         this.queryOptions = { type };
 
         this.deviceScanDuration = DEVICE_SCAN_DURATION_MS;
@@ -58,6 +59,13 @@ class DeviceManager {
      * discovery's reach.
      */
     startDiscovery() {
+        // NOTE: Start advertising orchestrator's core services to "itself", so
+        // that it passes through the same pipeline and shows up as any other
+        // supervisor would.
+        this.orchestratorAdvertiser = new bonjour.Bonjour();
+        this.orchestratorAdvertiser.publish(ORCHESTRATOR_ADVERTISEMENT);
+
+
         // Continuously do new scans for devices in an interval.
         let scanBound = this.startScan.bind(this);
         scanBound(this.deviceScanDuration);
@@ -133,11 +141,11 @@ class DeviceManager {
      * known.
      */
     async #addNewDevice(serviceData) {
-        let device = (await this.database.read("device", { name: serviceData.name }))[0];
+        let device = await this.deviceCollection.findOne({ name: serviceData.name });
         if (!device) {
             // Transform the service into usable device data.
             device = new Device(serviceData.name, serviceData.addresses, serviceData.port);
-            this.database.create("device", [device]);
+            this.deviceCollection.insertOne(device);
         } else {
             if (device.description && device.description.platform) {
                 return null;
@@ -193,7 +201,7 @@ class DeviceManager {
             return;
         }
 
-        this.database.update("device", { name: device.name }, { description: deviceDescription });
+        this.deviceCollection.updateOne({ name: device.name }, { $set: { description: deviceDescription } });
 
         console.log(`Added description for device '${device.name}'`);
 
@@ -223,7 +231,7 @@ class DeviceManager {
      * given, check all.
      */
     async healthCheck(deviceName) {
-        let devices = await this.database.read("device", deviceName ? { name: deviceName } : {});
+        let devices = await (await this.deviceCollection.find(deviceName ? { name: deviceName } : {})).toArray();
 
         let date = new Date();
         let healthChecks = devices.map(x => ({
@@ -247,13 +255,14 @@ class DeviceManager {
                 continue;
             }
 
-            this.database.update(
-                "device",
+            this.deviceCollection.updateOne(
                 { name: x.device },
                 {
-                    health: {
-                        report: health,
-                        timeOfQuery: x.timestamp,
+                    $set: {
+                        health: {
+                            report: health,
+                            timeOfQuery: x.timestamp,
+                        }
                     }
                 }
             );
@@ -272,12 +281,12 @@ class DeviceManager {
         if (typeof x === "string") {
             name = x;
         } else {
-            console.log(`Service '${service.name}' seems to have emitted 'goodbye'`);
+            console.log(`Service '${x.name}' seems to have emitted 'goodbye'`);
             // Assume the service data from mDNS is used to remove a device.
             name = x.name;
         }
 
-        this.database.delete("device", { name: name });
+        this.deviceCollection.deleteOne({ name: name });
     }
 
 
@@ -326,4 +335,5 @@ class MockDeviceDiscovery {
 module.exports = {
     DeviceDiscovery: DeviceManager,
     MockDeviceDiscovery,
+    Device,
 };

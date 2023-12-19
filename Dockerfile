@@ -12,6 +12,11 @@ WORKDIR /app
 # Install nodemon (https://nodemon.io/) for automatic reloads on code changes.
 RUN npm install -g nodemon
 
+# Install other dev dependencies.
+COPY package.json .
+COPY package-lock.json .
+RUN npm install
+
 # In MS provided node devcontainer, the user is `node`, not `vscode`.
 USER node
 

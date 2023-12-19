@@ -2,6 +2,7 @@ version: '3.4'
 
 services:
   orchestrator-base:
+    container_name: wasmiot-orchestrator
     image: ghcr.io/liquidai-project/wasmiot-orchestrator
     build:
       context: ./fileserv

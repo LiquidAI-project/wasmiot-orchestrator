@@ -1,0 +1,31 @@
+{
+    "name": "StoreData",
+    "endpoints": {
+        "APush": {
+            "device": "theA",
+            "module": "Datalist",
+            "function": "push"
+        },
+        "AGet": {
+            "device": "theA",
+            "module": "Datalist",
+            "function": "get"
+        },
+        "BNegate": {
+            "device": null,
+            "module": "Arithmetic",
+            "function": "negated"
+        },
+        "BSquare": {
+            "device": null,
+            "module": "Arithmetic",
+            "function": "squared"
+        }
+    },
+    "outpoints": {
+        "APush": ["AGet"],
+        "AGet": ["BNegate", "BSquare"],
+        "BNegate": ["APush"],
+        "BSquare": ["APush"]
+    }
+}

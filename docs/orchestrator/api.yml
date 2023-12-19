@@ -1,0 +1,410 @@
+openapi: '3.0.3'
+info:
+  title: Wasm-IoT Orchestrator developer API
+  version: '0.0.1'
+  description: |
+    This API is used to interact with the orchestrator for creating packages,
+    deployments and to monitor connected IoT-devices. In addition IoT-devices
+    use it to fetch packages and report events.
+tags:
+  - name: WebAssembly
+    description: Executing WebAssembly workloads
+  - name: IoT
+    description: Deploying workloads to supervisor devices found in network
+servers:
+  - url: http://{serverIp}:{port}
+    variables:
+      serverIp:
+        default: localhost
+        description: Address where the orchestrator API is available
+      port:
+        enum:
+          - '3000'
+          - '80'
+        default: '3000'
+paths:
+  /file/module:
+    get:
+      description: Return information about all available modules
+      responses:
+        '200':
+          description: An array of module information
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Module"
+    post:
+      description: Create a new module
+      requestBody:
+        description: The .wasm binary to base the module on
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - name
+                - wasm
+              properties:
+                name:
+                  type: string
+                wasm:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: The module was created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      description: Delete all modules
+      responses:
+        '200':
+          description: All modules deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletedCount:
+                    type: integer
+
+  /file/module/{module_id}:
+    parameters:
+      - name: module_id
+        in: path
+        description: ID of the module
+        required: true
+        schema:
+          type: string
+    get:
+      description: Return information about a single module
+      responses:
+        '200':
+          description: An array of module information
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Module"
+        '404':
+          description: Module not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /file/module/{module_id}/upload:
+    parameters:
+      - name: module_id
+        in: path
+        description: ID of the module
+        required: true
+        schema:
+          type: string
+    post:
+      description: Generate description to an existing module
+      requestBody:
+        description: |
+          Function type information for generating the description
+          and files or 'mounts' to attach to and send along with the module once
+          its deployed.
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                functions:
+                  $ref: "#/components/schemas/ModuleManifest"
+                [mountName]:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: The module description was successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  description:
+                    description: Generated OpenAPI document of the module
+                    type: object
+  
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+
+  /file/module/{module_id}/{file_name}:
+    parameters:
+      - name: module_id
+        in: path
+        description: ID of the module
+        required: true
+        schema:
+          type: string
+      - name: file_name
+        in: path
+        description: Name of an associated file.
+        required: true
+        schema:
+          type: string
+    get:
+      description: Return a file associated to a module
+      responses:
+        '200':
+          description: The file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            application/wasm:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Module or file not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /file/device:
+    get:
+      description: Return information about all available devices
+      responses:
+        '200':
+          description: An array of device information
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+    delete:
+      description: Delete all devices
+      responses:
+        '200':
+          description: All devices deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletedCount:
+                    type: integer
+
+  /file/device/discovery/reset:
+    post:
+      description: Force device scanning in orchestrator network
+      responses:
+        '204':
+          description: The rescan was started
+
+  /file/manifest:
+    get:
+      description: Return information about all created deployments
+      responses:
+        '200':
+          description: An array of deployment information
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Deployment"
+    post:
+      description: Create a new deployment
+      requestBody:
+        description: |
+          Function type information and files or 'mounts' to attach to the
+          module
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Manifest"
+      responses:
+        '204':
+          description: The deployment was created and enacted
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      description: Delete all deployments
+      responses:
+        '200':
+          description: All deployments deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletedCount:
+                    type: integer
+
+
+  /file/manifest/{deployment_id}:
+    parameters:
+      - name: deployment_id
+        in: path
+        description: ID of the deployment
+        required: true
+        schema:
+          type: string
+    get:
+      description: Return information about a single deployment
+      responses:
+        '200':
+          description: An array of deployment information
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Deployment"
+        '404':
+          description: Deployment not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      description: Enact a deployment installing it on associated devices
+      responses:
+        '200':
+          description: Deployment found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceResponses:
+                    type: object
+                    properties:
+                      [deviceId]:
+                        $ref: "#/components/schemas/DeviceDeployResponse"
+        '404':
+          description: Deployment not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Deployment failed in some way
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /execute/{deployment_id}:
+    parameters:
+      - name: deployment_id
+        in: path
+        description: ID of the deployment
+        required: true
+        schema:
+          type: string
+    post:
+      description: Call the starting endpoint of a deployment and 'search' for
+        its eventual response
+      requestBody:
+        description: Any kind of input-data the starting endpoint of the deployment expects
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                [argName]:
+                  type: object
+                [mountName]:
+                  type: string
+                  format: binary
+                
+      responses:
+        '200':
+          description: Result search succeeded
+          content:
+            application/json:
+              schema:
+                type: object
+        '500':
+          description: Error in result search
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: Deployment not found
+      
+
+components:
+  schemas:
+    Error:
+      type: object
+      required:
+        - name
+        - message
+      properties:
+        name:
+          type: string
+        message:
+          type: string
+    DeviceDeployResponse:
+      description: How the device responded to deployment
+      type: object
+      properties:
+        status: 
+          type: integer
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [success]
+
+    # "Redefine" the schemas here, because the automatic generation tool
+    # (openapi-typescript-codegen) does not currently seem to find them inside
+    # the paths (see
+    # https://github.com/ferdikoomen/openapi-typescript-codegen/issues/1475).
+    Deployment:
+      $ref: "./schemas/Deployment.yml"
+    Device:
+      $ref: "./schemas/Device.yml"
+    Manifest:
+      $ref: "./schemas/Manifest.yml"
+    Module:
+      $ref: "./schemas/Module.yml"
+    ModuleManifest:
+      $ref: "./schemas/ModuleManifest.yml"
+    # "Redefine" also some of the repeated "inner" schemas (maybe same problem
+    # as above?).
+    Function:
+      $ref: "./schemas/Function.yml"
+    ModuleDescription:
+      $ref: "./schemas/ModuleDescription.yml"
+    PrimitiveType:
+      $ref: "./schemas/PrimitiveType.yml"

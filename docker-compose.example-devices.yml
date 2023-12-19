@@ -62,7 +62,6 @@ services:
       - ./example/device2/configs:/app/instance/configs
       - ./example/device2/modules:/app/instance/modules
       - ./example/device2/output:/app/instance/output
-    privileged: true
     devices:
       - /dev/video0:/dev/video0
     deploy:

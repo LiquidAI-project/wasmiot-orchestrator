@@ -147,7 +147,12 @@ function deploymentSequenceItem(device, mod, exportt) {
     return {
         // Data for parsing later into values compatible with the
         // deploy-endpoint.
-        value: JSON.stringify({ "device": device._id, "module": mod._id, "func": exportt }),
+        value: JSON.stringify({
+            "device": device._id,
+            // Use name for core modules, as the ID changes on each server startup.
+            "module": mod.isCoreModule ? mod.name : mod._id,
+            "func": exportt
+        }),
         // Make something that a human could understand from the interface.
         // TODO/FIXME?: XSS galore?
         text: `Use ${device.name} for ${mod.name}:${exportt}`
@@ -172,13 +177,18 @@ function sequenceItemSelectOptions(devicesData, modulesData) {
     // selectable.
     for (let device of [anyDevice].concat(devicesData)) {
         for (let mod of modulesData) {
-            if (mod.exports === undefined) {
-                // Do not include modules without uploaded Wasm's at all.
-                continue;
+            if (mod.exports.length > 0) {
+                for (let exportt of mod.exports) {
+                    options.push(deploymentSequenceItem(device, mod, exportt.name));
+                }
+            } else if (device.name === "orchestrator" && mod.isCoreModule) {
+                // Build the option from description instead.
+                for (let path of Object.keys(mod.description.paths)) {
+                    // NOTE: Removing the path's parts for just showing the assumed function name.
+                    options.push(deploymentSequenceItem(device, mod, path.replace(/\/.*\//, "")));
+                }
             }
-            for (let exportt of mod.exports) {
-                options.push(deploymentSequenceItem(device, mod, exportt.name));
-            }
+            // Do not include non-core modules without uploaded Wasm's at all.
         }
     }
 
@@ -519,7 +529,7 @@ function submitFormData(url) {
             formData.delete("id");
         }
 
-        apiCall(url, "POST", formData, false);
+        apiCallSetStatus(url, "POST", formData, false);
     }
 
     return handleSubmit;
@@ -904,36 +914,11 @@ async function addHandlersToTabSelectors() {
     }
 }
 
-async function apiCall(url, method, body, headers={"Content-Type": "application/json"}) {
-    let options = {
-        method: method,
-        body: body
-    };
-    if (headers) {
-        options.headers = headers;
-    }
-    const response = await fetch(url, options);
-
-    if (response.status === 204) {
-        setStatus({ success: "API call succeeded with no further response data" });
-        return;
-    }
-
-    // Assume parsing JSON will fail.
-    let result = {
-        error: true,
-        errorText: `Parsing API response to JSON failed (see console)`
-    };
-    try {
-        const theJson = await response.json();
-        // Replace with successfull result.
-        result = { success: theJson };
-    } catch(e) {
-        console.error(e)
-    }
-
+async function apiCallSetStatus(url, method, body, headers={"Content-Type": "application/json"}) {
+    let result = await apiCall(url, method, body, headers);
     setStatus(result);
 }
+
 
 /**
  * Add event handlers for the forms creating or updating a module.
@@ -963,7 +948,7 @@ function addHandlersToDeploymentForms() {
         .addEventListener("submit", function (event) {
             event.preventDefault();
             const deploymentObj = formToObject(event.target);
-            apiCall("/file/manifest", "POST", JSON.stringify(deploymentObj));
+            apiCallSetStatus("/file/manifest", "POST", JSON.stringify(deploymentObj));
 
         });
 
@@ -971,7 +956,7 @@ function addHandlersToDeploymentForms() {
         .addEventListener("submit", async function (event) {
             event.preventDefault();
             const deploymentObj = formToObject(event.target);
-            await apiCall(`/file/manifest/${deploymentObj.id}`, "PUT", JSON.stringify(deploymentObj));
+            await apiCallSetStatus(`/file/manifest/${deploymentObj.id}`, "PUT", JSON.stringify(deploymentObj));
 
             // Hide the form after the update.
             document.querySelector("#deployment-update-form div div:nth-child(2)").classList.add("hidden");
@@ -984,7 +969,7 @@ function addHandlersToDeploymentForms() {
             async (event) => {
                 event.preventDefault();
                 let deploymentObj = formToObject(event.target);
-                apiCall(`/file/manifest/${deploymentObj["id"]}`, "POST", JSON.stringify(deploymentObj));
+                apiCallSetStatus(`/file/manifest/${deploymentObj["id"]}`, "POST", JSON.stringify(deploymentObj));
             }
         );
 

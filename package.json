@@ -1,0 +1,17 @@
+{
+  "name": "clients",
+  "dependencies": {
+    "@types/node": "^20.10.1",
+    "bonjour": "^3.5.0",
+    "commander": "^11.1.0",
+    "express": "^4.18.2",
+    "node-fetch": "^3.3.0",
+    "openapi-typescript-codegen": "^0.25.0",
+    "typescript": "^5.3.2"
+  },
+  "scripts": {
+    "generate": "rm -rf ./client/cli/generatedApiClient && openapi --input ./docs/orchestrator/api.yml --output ./client/cli/generatedApiClient --request ./client/cli/requestsBlobPatch.ts --name Orcli",
+    "compile": "rm -rf ./client/cli/built/src && tsc --project ./client/cli/tsconfig.json",
+    "client": "node ./client/cli/built/src/cli.js"
+  }
+}
