@@ -8,7 +8,7 @@
 	"service": "orchestrator",
 	// Could not seem to be able to select "profile" from compose-file to run
 	// the orchestration-related services (server and db), so list them here.
-	"runServices": ["orchestrator", "mongo"],
+	"runServices": ["orchestrator", "mongo", "jaeger"],
 	"workspaceFolder": "/app",
 
 	//"remoteUser": "vscode",

@@ -11,6 +11,13 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@opentelemetry/api": "^1.7.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.40.3",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.47.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.47.0",
+    "@opentelemetry/instrumentation-express": "^0.34.1",
+    "@opentelemetry/instrumentation-http": "^0.47.0",
+    "@opentelemetry/sdk-node": "^0.47.0",
     "@sentry/node": "^7.51.2",
     "bonjour-service": "^1.1.1",
     "deptrace": "^0.2.4",

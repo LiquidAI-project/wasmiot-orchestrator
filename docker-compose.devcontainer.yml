@@ -24,9 +24,11 @@ services:
     user: node
     environment:
       NODE_ENV: development
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_NODE_RESOURCE_DETECTORS: env,host,container
     volumes:
-    # Mount source code on host to the container in corresponding location. NOTE
-    # Mounting overwrites files/directories in image.
+      # Mount source code on host to the container in corresponding location. NOTE
+      # Mounting overwrites files/directories in image.
       - .:/app
       - /var/run/docker.sock:/var/run/docker.sock
 
@@ -35,10 +37,17 @@ services:
       file: docker-compose.yml
       service: mongo
 
-  debug-device:
-    extends:
-      file: docker-compose.example-devices.yml
-      service: adequate-webcam-laptop
+  jaeger:
+    image: jaegertracing/all-in-one:${JAEGER_VERSION:-latest}
+    ports:
+      # UI
+      - 16686:16686
+      # HTTP/JSON collector
+      - 4318:4318
+      - 5775:5775/udp
+
+    environment:
+      - LOG_LEVEL=debug
 
 volumes:
   mongo-config:
