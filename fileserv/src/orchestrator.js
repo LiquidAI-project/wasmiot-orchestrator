@@ -372,6 +372,7 @@ function createSolution(deploymentId, sequence, packageBaseUrl) {
     // According to deployment manifest describing the composed
     // application-calls, create a structure to represent the expected behaviour
     // and flow of data between nodes.
+    // TODO: Add an endpoints list corresponding with deployment sequence, so forward endpoints can be set easier.
     for (let i = 0; i < sequence.length; i++) {
         const [device, modulee, func] = Object.values(sequence[i]);
 
