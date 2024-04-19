@@ -57,13 +57,7 @@ function setRoutes(routeDependencies) {
     app.use("/file/module",   routes.modules);
     app.use("/file/manifest", routes.deployment);
     app.use("/execute",       routes.execution);
-
-    // End point to receive Device logs from supervisor
-    app.post('/device/logs', (req, res) => {
-        const logData = req.body.logData;
-        console.log(logData);
-        res.status(200).send({ message: 'Log received' });
-    });
+    app.use("/device/logs",   routes.logs);
 
     // NOTE: This is for testing if for example an image file needs to be available
     // after execution of some deployed work.
