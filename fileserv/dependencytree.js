@@ -41,7 +41,8 @@ function createPackageDatabase(directoryPath) {
 }
 
 // Example usage
-const database = createPackageDatabase('./modules');
+console.log(process.cwd());
+//const database = createPackageDatabase('./fileserv/modules');
 //test_path = findPackagePath("dht22_logger", "1.0.0", database);
 //testNode = createNodeFromMetadata(test_path);
 //const dependencyTree = resolveDependenciesWithBacktracking(testNode);
@@ -223,8 +224,6 @@ function getAvailableVersions(packageName, database = null) {
 }
 
 
-
-
 ////////////////////////// TEST CASES //////////////////////////
 
 const testCases = [
@@ -284,6 +283,5 @@ function runTestCases() {
 
 
 
-
-// Run the tests
 //runTestCases();
+

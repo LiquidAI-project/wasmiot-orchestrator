@@ -144,8 +144,12 @@ class DeviceManager {
         let device = await this.deviceCollection.findOne({ name: serviceData.name });
         if (!device) {
             // Transform the service into usable device data.
+            //HOX: figure out if device _id can be created here?
             device = new Device(serviceData.name, serviceData.addresses, serviceData.port);
-            this.deviceCollection.insertOne(device);
+            //device._id = serviceData.name
+            this.deviceCollection.insertOne(device); //FIXME: _id is a placeholder, add hardcoded value based on device name like [(orchestrator, 0001), lousy-webcam-laptop, 0002]
+
+  
         } else {
             if (device.description && device.description.platform) {
                 return null;

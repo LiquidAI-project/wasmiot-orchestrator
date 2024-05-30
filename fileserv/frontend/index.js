@@ -799,7 +799,9 @@ async function setupModuleUploadTab() {
  * Needs data about:
  * - All devices
  * - All modules
- */
+ * HOX: possibly use fetchModule to hardcode the modules that are allowed to be used
+*/
+
 async function setupDeploymentCreateTab() {
     const devices = await fetchDevice();
     const modules = await fetchModule();

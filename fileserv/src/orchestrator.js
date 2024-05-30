@@ -200,7 +200,7 @@ class Orchestrator {
 
         let requests = [];
         for (let [deviceId, manifest] of Object.entries(deploymentSolution)) {
-            let device = await this.deviceCollection.findOne({ _id: ObjectId(deviceId) });
+            let device = await this.deviceCollection.findOne({ _id: deviceId });
 
             if (!device) {
                 throw new DeviceNotFound("", deviceId);
@@ -247,7 +247,7 @@ class Orchestrator {
             let argument = body[param.name];
             switch (param.in) {
                 case "path":
-                    path = path.replace(param.name, argument);
+                    path = path.replace(param, argument);
                     break;
                 case "query":
                     url.searchParams.append(param.name, argument);
@@ -274,7 +274,8 @@ class Orchestrator {
                 options.body = { foo: "bar" };
             }
         }
-
+        //HOX: source of BAD URL
+        //FIX: hardcode the response
         // Message the first device and return its reaction response.
         return fetch(url, options);
     }
