@@ -1,5 +1,3 @@
-version: '3.4'
-
 services:
   # TODO Set IOT-device hostnames to end with ".local."? Considered using `domainname`
   # (see https://docs.docker.com/compose/compose-file/#domainname) but had no
