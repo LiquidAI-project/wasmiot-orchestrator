@@ -12,7 +12,15 @@ orchestrating logic for WebAssembly-based microservices.
 - Web GUI
 
 ## Installation
-Clone the project and its submodules and use `docker compose` to build and start the server.
+Clone the project and its submodules.
+
+```bash
+git clone --recursive git@github.com:LiquidAI-project/wasmiot-orchestrator.git
+cd wasmiot-orchestrator
+```
+
+Use `docker compose` to build and start the server.
+
 
 Using Windows 10 you could do the following:
 ```powershell
