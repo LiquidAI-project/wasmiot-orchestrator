@@ -31,6 +31,24 @@ services:
       - mongo-config:/DATA/CONFIGDB
       - mongo-db:/DATA/DB
 
+  mongo-express:
+    image: mongo-express:1.0.2
+    restart: always
+    depends_on:
+      - mongo
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=${MONGO_HOST:-mongo}
+      - ME_CONFIG_MONGODB_PORT=${MONGO_PORT:-27017}
+      - ME_CONFIG_MONGODB_ENABLE_ADMIN=${MONGO_EXPRESS_ENABLE_ADMIN:-false}
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=${MONGO_ROOT_USERNAME}
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=${MONGO_ROOT_PASSWORD}
+      - ME_CONFIG_BASICAUTH_USERNAME=${MONGO_EXPRESS_USERNAME}
+      - ME_CONFIG_BASICAUTH_PASSWORD=${MONGO_EXPRESS_PASSWORD}
+    ports:
+      - ${MONGO_EXPRESS_PORT:-8081}:8081
+    networks:
+      default:
+
 volumes:
   mongo-config:
   mongo-db:
