@@ -3,6 +3,7 @@
  */
 
 const express = require("express");
+const cors = require('cors');
 
 const { FRONT_END_DIR, SENTRY_DSN, UTILS_PATH } = require("../constants.js");
 
@@ -24,6 +25,8 @@ async function init(appDependencies) {
     if (!appDependencies.testing) {
         checkSentry();
     }
+
+    app.use(cors()); 
 
     await setRoutes(appDependencies);
 
