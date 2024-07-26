@@ -1,9 +1,40 @@
 const express = require("express");
+const WebSocket = require("ws");
 
 let collection = null;
+let wss = null;
+let lastChecked = new Date();
 
 async function setDatabase(db) {
     collection = db.collection("supervisorLogs");
+    // Start the polling mechanism
+    pollForNewLogs();
+}
+
+function setWebSocketServer(webSocketServer) {
+    wss = webSocketServer;
+}
+
+// Poll for new logs every 5 seconds
+async function pollForNewLogs() {
+    try {
+        const newLogs = await collection.find({ dateReceived: { $gt: lastChecked } }).toArray();
+        if (newLogs.length > 0) {
+            // Update the lastChecked time
+            lastChecked = new Date();
+            // Broadcast new logs to all connected WebSocket clients
+            wss.clients.forEach((client) => {
+                if (client.readyState === WebSocket.OPEN) {
+                    newLogs.forEach(log => client.send(JSON.stringify(log)));
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Error while polling for new logs:', error);
+    } finally {
+        // Schedule the next poll
+        setTimeout(pollForNewLogs, 5000);
+    }
 }
 
 // Define schema for the supervisor logs
@@ -57,4 +88,4 @@ router.post("/", createSupervisorLogs);
 router.get("/", getSupervisorLogs);
 
 
-module.exports = { setDatabase, router };
+module.exports = { setDatabase, router, setWebSocketServer };
