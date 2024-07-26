@@ -14,6 +14,9 @@ const utils = require("./utils.js");
 const { initializeCoreServices } = require("./routes/coreServices");
 const { addInitialData } = require("./src/initializer.js");
 
+const WebSocket = require('ws');
+const { setWebSocketServer } = require('./routes/logs');
+
 /**
  * The Express app.
  */
@@ -143,6 +146,16 @@ function initServer() {
         );
         // Now that the server is up, initialize the core services.
         initializeCoreServices();
+
+        // Initialize WebSocket server
+        const wss = new WebSocket.Server({ server });
+        setWebSocketServer(wss);
+
+        wss.on('connection', (ws) => {
+            console.log('New WebSocket connection');
+        });
+
+        console.log("WebSocket server initialized");
     });
 
     server.on("error", (e) => {
