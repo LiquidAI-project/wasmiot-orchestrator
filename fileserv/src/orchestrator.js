@@ -135,7 +135,8 @@ class Orchestrator {
         this.moduleCollection = database.collection("module");
         this.deploymentCollection = database.collection("deployment");
 
-        this.packageManagerBaseUrl = options.packageManagerBaseUrl || constants.PUBLIC_BASE_URI;
+        // Use the internal base URI for devices to pull modules from.
+        this.packageManagerBaseUrl = constants.INTERNAL_BASE_URI;
         if (!options.deviceMessagingFunction) {
             throw new utils.Error("method for communicating to devices not given");
         }

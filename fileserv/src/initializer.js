@@ -4,7 +4,7 @@
 
 const fs = require("fs");
 const { ObjectId,  } = require("mongodb");
-const { CLEAR_LOGS, INIT_FOLDER, PUBLIC_BASE_URI } = require("../constants.js");
+const { CLEAR_LOGS, INIT_FOLDER, INTERNAL_BASE_URI } = require("../constants.js");
 
 const DEVICE = "device";
 const MODULE = "module";
@@ -134,7 +134,7 @@ function copyFiles(files) {
 function replacePublicBaseUri(url) {
     const URL_SPLITTER = "file/module";
     const urlParts = url.split(URL_SPLITTER);
-    return `${PUBLIC_BASE_URI}${URL_SPLITTER}${urlParts.slice(1).join("")}`;
+    return `${INTERNAL_BASE_URI}${URL_SPLITTER}${urlParts.slice(1).join("")}`;
 }
 
 async function initDevices(database) {
