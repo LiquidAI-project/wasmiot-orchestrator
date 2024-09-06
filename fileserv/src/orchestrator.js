@@ -995,7 +995,7 @@ function moduleData(modulee, packageBaseUrl) {
 const ORCHESTRATOR_ADVERTISEMENT = {
     name: "orchestrator",
     type: constants.DEVICE_TYPE,
-    port: 3000,
+    port: constants.PUBLIC_PORT,
 };
 
 const ORCHESTRATOR_WASMIOT_DEVICE_DESCRIPTION = {
