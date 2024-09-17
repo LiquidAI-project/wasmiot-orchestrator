@@ -35,7 +35,7 @@ const getModuleCards = async (request, response) => {
 
     let filterRule = {};
     if (request.query.after) {
-        console.log("Getting cards after date: ", new Date(request.query.after));
+        console.log("Getting module cards after date: ", new Date(request.query.after));
         // Check if date is provided, if so, get logs after that date,
         filterRule = { dateReceived: { $gt: new Date(request.query.after) } };
     }

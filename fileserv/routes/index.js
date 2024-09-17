@@ -10,12 +10,15 @@ const execution = require("./execution");
 const { init: initCoreServices } = require("./coreServices");
 const supervisorLogs = require("./logs");
 const moduleCards = require("./moduleCards");
+const nodeCards = require("./nodeCards");
 
 
 /* Set common dependencies between the API routes. */
 async function init(routeDependencies) {
     device.setDatabase(routeDependencies.database);
     device.setDeviceDiscovery(routeDependencies.deviceDiscovery);
+
+    nodeCards.setDatabase(routeDependencies.database);
 
     modules.setDatabase(routeDependencies.database);
     moduleCards.setDatabase(routeDependencies.database);
@@ -36,7 +39,8 @@ async function init(routeDependencies) {
         execution: execution.router,
         coreServicesRouter,
         logs: supervisorLogs.router,
-        moduleCards: moduleCards.router
+        moduleCards: moduleCards.router,
+        nodeCards: nodeCards.router
     };
 }
 
