@@ -130,10 +130,10 @@ class Orchestrator {
     * devices to pull modules from.
     */
     constructor(dependencies, options) {
-        let database = dependencies.database;
-        this.deviceCollection = database.collection("device");
-        this.moduleCollection = database.collection("module");
-        this.deploymentCollection = database.collection("deployment");
+        this.database = dependencies.database;
+        this.deviceCollection = this.database.collection("device");
+        this.moduleCollection = this.database.collection("module");
+        this.deploymentCollection = this.database.collection("deployment");
 
         this.packageManagerBaseUrl = options.packageManagerBaseUrl || constants.PUBLIC_BASE_URI;
         if (!options.deviceMessagingFunction) {
@@ -182,6 +182,14 @@ class Orchestrator {
 
         let solution = createSolution(deploymentId, assignedSequence, this.packageManagerBaseUrl)
 
+        // Check validity of the solution.
+        try {
+            await validateDeploymentSolution(solution, this.database);
+            console.log("Deployment solution validated");
+        } catch (error) {
+            throw error.message;
+        }
+
         // Update the deployment with the created solution.
         this.deploymentCollection.updateOne(
             { _id: ObjectId(deploymentId) },
@@ -190,6 +198,7 @@ class Orchestrator {
 
         return resolving ? solution : deploymentId;
     }
+
 
     async deploy(deployment) {
         let deploymentSolution = deployment.fullManifest;
@@ -273,6 +282,104 @@ class Orchestrator {
 
         // Message the first device and return its reaction response.
         return fetch(url, options);
+    }
+}
+
+async function validateDeploymentSolution(solution, database) {
+    // Can module be placed on device?
+    // Is input data source -> find data source on device
+    // Infer output risk (from data source / temp output and func risk transform)
+    // Can output be placed on device?
+    // Keep output risk level for next step
+
+    const nodecards = database.collection("nodecards");
+    const modulecards = database.collection("modulecards");
+    const datasourcecards = database.collection("datasourcecards");
+
+    console.log("Validating deployment solution");
+    console.log(solution);
+
+    const sequence = solution.sequence;
+    let output_risk = "none";
+
+    for (let step of sequence) {
+        const device = step.device;
+        const wasmmodule = step.module;
+        const func = step.func;
+
+        console.log(device.id.toString('hex'))
+        console.log(wasmmodule.id.toString('hex'))
+        console.log(func)
+        if (!step.device) {
+            throw "device not found";
+        }
+        if (!step.module) {
+            throw "module not found";
+        }
+        if (!step.func) {
+            throw "function not found";
+        }
+
+        // Find the node card for the device and the module card for the module
+        const nodecard = await nodecards.findOne({ nodeid: device.id.toString('hex') });
+        const modulecard = await modulecards.findOne({ moduleid: wasmmodule.id.toString('hex') });
+
+        // Throw an error if the node card or module card is not found
+        if (!nodecard) {
+            throw new Error(`Node card not found for device ${device.id.toString('hex')}`);
+        }
+        if (!modulecard) {
+            throw new Error(`Module card not found for module ${wasmmodule.id.toString('hex')}`);
+        }
+
+        // Find the data source card for the input type of the module, if needed
+        let datasourcecard = null;
+        if (modulecard["input-type"] != "temp") {
+            datasourcecard = await datasourcecards.findOne({ type: modulecard["input-type"], nodeid: device.id.toString('hex') });
+            if(!datasourcecard) {
+                throw new Error(`Data source card not found for input type ${modulecard["input-type"]} on device ${device.id.toString('hex')}`);
+            }
+            console.log(`Data source: ${datasourcecard.name}, risk-level: ${datasourcecard["risk-level"]}`);
+        }
+        console.log("Node: " + nodecard.name + ", risk-level: " + nodecard["risk-level"]);
+        console.log("Module: " + modulecard.name + ", risk-level: " + modulecard["risk-level"], ", output-risk: " + modulecard["output-risk"]);
+
+        // Check if the module can be placed on the node
+        if (nodecard["risk-level"] == "unsafe") {
+            if (modulecard["risk-level"] == "high") {
+                throw new Error("High-risk module on unsafe node");
+            }
+        }
+        
+        // Check if input can be on the node
+        if (datasourcecard) {
+            if (datasourcecard["risk-level"] == "high" && nodecard["risk-level"] == "unsafe") {
+                throw new Error("High-risk input on unsafe node");
+            }
+        } else {
+            if (output_risk == "high" && nodecard["risk-level"] == "unsafe") {
+                throw new Error("High-risk input on unsafe node");
+            }
+        }
+
+        // Infer module output risk level
+        if (modulecard["output-risk"] == "inherit") {
+            // Inherit risk level from data source or other input
+            if (datasourcecard) {
+                output_risk = datasourcecard["risk-level"];
+            } else {
+                // Keep the existing output risk level: output_risk = output_risk
+            }
+        } else {
+            output_risk = modulecard["output-risk"];
+        }
+        console.log(`Output risk level: ` + output_risk);
+
+        // Check if the output can be on the node
+        if (output_risk == "high" && nodecard["risk-level"] == "unsafe") {
+            throw new Error("High-risk output on unsafe node");
+        }
+
     }
 }
 
