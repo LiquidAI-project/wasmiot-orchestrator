@@ -7,23 +7,60 @@ async function setDatabase(db) {
 }
 
 /**
- * Endpoint for receiving metadata cards for modules and saving them to database.
+ * Endpoint for receiving metadata cards for modules and saving them to the database.
  */
 const createModuleCard = async (req, res) => {
     try {
         console.log("Received module card data: ", req.body);
-        //let modulecard = JSON.parse(req.body);
-        let modulecard = req.body;
-        // Add timestamp to the log data
-        modulecard.dateReceived = new Date();
-        await collection.insertOne(modulecard);
-        res.status(200).send({ message: 'Module card received and saved' });
+        const odrlDocument = req.body;
+
+        // Extract the permission block
+        if (!odrlDocument.permission || !Array.isArray(odrlDocument.permission)) {
+            throw new Error("Invalid ODRL document: Missing or invalid 'permission' section.");
+        }
+
+        const permission = odrlDocument.permission[0];
+        const moduleData = parseModulePermission(permission);
+
+        // Add a timestamp and save to the database
+        moduleData.dateReceived = new Date();
+        await collection.insertOne(moduleData);
+
+        res.status(200).send({ message: "Module card received and saved", moduleData });
     } catch (e) {
-        console.error(e);
-        res.status(500).send({ message: 'Error creating module card' });
-        return;
+        console.error("Error processing module card: ", e);
+        res.status(500).send({ message: "Error processing module card" });
     }
-}
+};
+
+/**
+ * Parses the permission block of an ODRL document to extract module data.
+ */
+const parseModulePermission = (permission) => {
+    const { target, action, constraint } = permission;
+
+    if (!target || !action || !constraint || !Array.isArray(constraint)) {
+        throw new Error("Invalid permission structure in ODRL document.");
+    }
+
+    const moduleData = {
+        moduleid: target,
+        name: action, // Assuming the action corresponds to the module's name/type
+    };
+
+    // Map constraints to module properties
+    constraint.forEach(({ leftOperand, rightOperand }) => {
+        if (leftOperand === "risk-level") {
+            moduleData["risk-level"] = rightOperand;
+        } else if (leftOperand === "input-type") {
+            moduleData["input-type"] = rightOperand;
+        } else if (leftOperand === "output-risk") {
+            moduleData["output-risk"] = rightOperand;
+        }
+    });
+
+    return moduleData;
+};
 
 /**
  * Get module metadata cards from the database.

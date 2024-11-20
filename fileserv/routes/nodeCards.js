@@ -12,17 +12,37 @@ async function setDatabase(db) {
 const createNodeCard = async (req, res) => {
     try {
         console.log("Received node card data: ", req.body);
-        let nodecard = req.body;
-        // Add timestamp to the log data
-        nodecard.dateReceived = new Date();
-        await collection.insertOne(nodecard);
-        res.status(200).send({ message: 'Node card received and saved' });
+
+        // Extract the raw metadata
+        const rawCard = req.body;
+
+        // Extract node information from the first asset (if multiple, handle as needed)
+        const asset = rawCard.asset && rawCard.asset[0];
+        if (!asset) {
+            throw new Error("Invalid metadata: Missing asset data");
+        }
+
+        // Extract zone information from relations
+        const relation = asset.relation && asset.relation.find(rel => rel.type === "memberOf");
+        const zone = relation ? relation.value : "unknown"; // Default to "unknown" if missing
+
+        // Prepare the transformed document
+        const nodeCard = {
+            name: asset.title || "unknown", // Default to "unknown" if title is missing
+            nodeid: asset.uid || "unknown", // Default to "unknown" if UID is missing
+            zone: zone,
+            dateReceived: new Date()
+        };
+
+        // Save to MongoDB
+        await collection.insertOne(nodeCard);
+
+        res.status(200).send({ message: 'Node card received and saved', nodeCard });
     } catch (e) {
-        console.error(e);
+        console.error("Error processing node card: ", e);
         res.status(500).send({ message: 'Error creating Node card' });
-        return;
     }
-}
+};
 
 /**
  * Get node metadata cards from the database.

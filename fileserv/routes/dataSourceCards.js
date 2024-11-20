@@ -12,17 +12,42 @@ async function setDatabase(db) {
 const createDataSourceCard = async (req, res) => {
     try {
         console.log("Received data source card data: ", req.body);
-        let nodecard = req.body;
-        // Add timestamp to the log data
-        nodecard.dateReceived = new Date();
-        await collection.insertOne(nodecard);
+        const odrlDocument = req.body;
+
+        // Extract the asset object (assume one asset for simplicity)
+        const asset = odrlDocument.asset?.[0];
+        if (!asset) {
+            res.status(400).send({ message: "Invalid ODRL document: Asset not found" });
+            return;
+        }
+
+        // Parse fields from the asset
+        const name = asset.title || "unknown";
+
+        // Extract relations for type, risk-level, and nodeid
+        const relations = asset.relation || [];
+        const type = relations.find(r => r.type === "type")?.value || "unknown";
+        const riskLevel = relations.find(r => r.type === "risk-level")?.value || "unknown";
+        const nodeid = relations.find(r => r.type === "nodeid")?.value || "unknown";
+
+        // Construct the parsed document
+        const parsedDataSource = {
+            name,
+            type,
+            "risk-level": riskLevel,
+            nodeid,
+            dateReceived: new Date()
+        };
+
+        // Save to MongoDB
+        await collection.insertOne(parsedDataSource);
+
         res.status(200).send({ message: 'Data source card received and saved' });
     } catch (e) {
         console.error(e);
         res.status(500).send({ message: 'Error creating data source card' });
-        return;
     }
-}
+};
 
 /**
  * Get data source metadata cards from the database.
