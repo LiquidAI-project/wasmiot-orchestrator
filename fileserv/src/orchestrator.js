@@ -184,11 +184,20 @@ class Orchestrator {
         let solution = createSolution(deploymentId, assignedSequence, this.packageManagerBaseUrl)
 
         // Check validity of the solution.
+        let validationError = null;
         try {
             await validateDeploymentSolution(deploymentId, solution, this.database);
-            console.log("Deployment solution validated");
+            console.log("Deployment solution validated successfully");
         } catch (error) {
-            throw error.message;
+            //throw error.message;
+            validationError = error.message;
+            console.error("Deployment solution validation failed: ", validationError);
+
+            // Attach the validation error as a note to the deployment.
+            await this.deploymentCollection.updateOne(
+                { _id: ObjectId(deploymentId) },
+                { $set: { validationError } }
+            );
         }
 
         // Update the deployment with the created solution.
@@ -288,20 +297,16 @@ class Orchestrator {
 
 /**
  * Validate the deployment solution
+ * @param {*} deploymentId The deployment ID to validate.
  * @param {*} solution The deployment solution to validate.
  * @param {*} database The database to use for validation.
  */
 async function validateDeploymentSolution(deploymentId, solution, database) {
-    // Can module be placed on device?
-    // Is input data source -> find data source on device
-    // Infer output risk (from data source / temp output and func risk transform)
-    // Can output be placed on device?
-    // Keep output risk level for next step
-
     const nodecards = database.collection("nodecards");
     const modulecards = database.collection("modulecards");
     const datasourcecards = database.collection("datasourcecards");
     const deploymentcertificates = database.collection("deploymentcertificates");
+    const zones = database.collection("zones");
 
     console.log("Validating deployment solution");
     console.log(solution);
@@ -310,13 +315,20 @@ async function validateDeploymentSolution(deploymentId, solution, database) {
     let output_risk = "none";
     const validationLogs = [];
 
+    // Load zones and their allowed risk levels
+    const zoneDefinitions = await zones.find({}).toArray();
+    const allowedRiskLevelsByZone = zoneDefinitions.reduce((map, zone) => {
+        map[zone.zone] = zone.allowedRiskLevels || [];
+        return map;
+    }, {});
+
     for (let step of sequence) {
         const device = step.device;
         const wasmmodule = step.module;
         const func = step.func;
         const stepLog = {
-            device: device.id.toString('hex'),
-            module: wasmmodule.id.toString('hex'),
+            device: device.id.toString("hex"),
+            module: wasmmodule.id.toString("hex"),
             func: func,
             node_zone: "none",
             module_risk: "none",
@@ -326,133 +338,93 @@ async function validateDeploymentSolution(deploymentId, solution, database) {
             reasons: []
         };
 
-        console.log(device.id.toString('hex'))
-        console.log(wasmmodule.id.toString('hex'))
-        console.log(func)
-        if (!step.device) {
-            throw "device not found";
-        }
-        if (!step.module) {
-            throw "module not found";
-        }
-        if (!step.func) {
-            throw "function not found";
+        if (!device || !wasmmodule || !func) {
+            throw new Error("Device, module, or function missing in the step.");
         }
 
-        // Find the node card for the device and the module card for the module
-        const nodecard = await nodecards.findOne({ nodeid: device.id.toString('hex') });
-        const modulecard = await modulecards.findOne({ moduleid: wasmmodule.id.toString('hex') });
+        // Retrieve node and module cards
+        const nodecard = await nodecards.findOne({ nodeid: device.id.toString("hex") });
+        const modulecard = await modulecards.findOne({ moduleid: wasmmodule.id.toString("hex") });
 
-        // Check that the node card and module card are found
         if (!nodecard) {
             stepLog.valid = false;
-            stepLog.reasons.push(`Node card not found for device ${device.id.toString('hex')}`);
+            stepLog.reasons.push(`Node card not found for device ${device.id.toString("hex")}`);
             validationLogs.push(stepLog);
             continue;
-            //throw new Error(`Node card not found for device ${device.id.toString('hex')}`);
-        } else {
-            stepLog.node_zone = nodecard["zone"];
         }
+        stepLog.node_zone = nodecard.zone;
 
         if (!modulecard) {
             stepLog.valid = false;
-            stepLog.reasons.push(`Module card not found for module ${wasmmodule.id.toString('hex')}`);
+            stepLog.reasons.push(`Module card not found for module ${wasmmodule.id.toString("hex")}`);
             validationLogs.push(stepLog);
             continue;
-            //throw new Error(`Module card not found for module ${wasmmodule.id.toString('hex')}`);
+        }
+        stepLog.module_risk = modulecard["risk-level"];
+
+        // Validate module placement based on the zone's allowed risk levels
+        const allowedRiskLevels = allowedRiskLevelsByZone[nodecard.zone] || [];
+        if (!allowedRiskLevels.includes(modulecard["risk-level"])) {
+            stepLog.valid = false;
+            stepLog.reasons.push(`Module risk level '${modulecard["risk-level"]}' not allowed in zone '${nodecard.zone}'`);
         } else {
-            stepLog.module_risk = modulecard["risk-level"];
+            stepLog.reasons.push(`Module risk level '${modulecard["risk-level"]}' allowed in zone '${nodecard.zone}'`);
         }
 
-        // Find the data source card for the input type of the module, if needed
+        // Validate input data source
         let datasourcecard = null;
-        if (modulecard["input-type"] != "temp") {
-            datasourcecard = await datasourcecards.findOne({ type: modulecard["input-type"], nodeid: device.id.toString('hex') });
-            if(!datasourcecard) {
+        if (modulecard["input-type"] !== "temp") {
+            datasourcecard = await datasourcecards.findOne({
+                type: modulecard["input-type"],
+                nodeid: device.id.toString("hex")
+            });
+
+            if (!datasourcecard) {
                 stepLog.valid = false;
-                stepLog.reasons.push(`Data source card not found for input type ${modulecard["input-type"]} on device ${device.id.toString('hex')}`);
-                validationLogs.push(stepLog);
-                continue;
-                //throw new Error(`Data source card not found for input type ${modulecard["input-type"]} on device ${device.id.toString('hex')}`);
+                stepLog.reasons.push(`Data source card not found for input type '${modulecard["input-type"]}' on device ${device.id.toString("hex")}`);
             } else {
                 stepLog.input_risk = datasourcecard["risk-level"];
+                stepLog.reasons.push(`Data source risk level '${datasourcecard["risk-level"]}' found for input type '${modulecard["input-type"]}'`);
             }
-            console.log(`Data source: ${datasourcecard.name}, risk-level: ${datasourcecard["risk-level"]}`);
         } else {
             stepLog.input_risk = output_risk;
+            stepLog.reasons.push(`Input type is temporary, inheriting risk level '${output_risk}'`);
         }
 
-        console.log("Node: " + nodecard.name + ", zone: " + nodecard["zone"]);
-        console.log("Module: " + modulecard.name + ", risk-level: " + modulecard["risk-level"], ", output-risk: " + modulecard["output-risk"]);
-
-        // Check if the module can be placed on the node
-        if (nodecard["zone"] == "unsafe") {
-            if (modulecard["risk-level"] == "high") {
-                stepLog.valid = false;
-                stepLog.reasons.push("High-risk module on unsafe node");
-                validationLogs.push(stepLog);
-                continue;
-                //throw new Error("High-risk module on unsafe node");
-            } else {
-                stepLog.reasons.push("Module can be placed on unsafe node")
-            }
+        // Validate input risk level
+        if (!allowedRiskLevels.includes(stepLog.input_risk)) {
+            stepLog.valid = false;
+            stepLog.reasons.push(`Input risk level '${stepLog.input_risk}' not allowed in zone '${nodecard.zone}'`);
         } else {
-            stepLog.reasons.push("Node is safe for modules")
-        }
-        
-        // Check if input can be on the node
-        if (datasourcecard) {
-            if (datasourcecard["risk-level"] == "high" && nodecard["zone"] == "unsafe") {
-                stepLog.valid = false;
-                stepLog.reasons.push("High-risk input on unsafe node");
-                validationLogs.push(stepLog);
-                continue;
-                //throw new Error("High-risk input on unsafe node");
-            } else {
-                stepLog.reasons.push("Data source can be read on node")
-            }
-        } else {
-            if (output_risk == "high" && nodecard["zone"] == "unsafe") {
-                stepLog.valid = false;
-                stepLog.reasons.push("High-risk input on unsafe node");
-                validationLogs.push(stepLog);
-                continue;
-                //throw new Error("High-risk input on unsafe node");
-            } else {
-                stepLog.reasons.push("Input can be on node")
-            }
+            stepLog.reasons.push(`Input risk level '${stepLog.input_risk}' allowed in zone '${nodecard.zone}'`);
         }
 
-        // Infer module output risk level
-        if (modulecard["output-risk"] == "inherit") {
-            // Inherit risk level from data source or other input
-            if (datasourcecard) {
-                output_risk = datasourcecard["risk-level"];
-            } else {
-                // Keep the existing output risk level: output_risk = output_risk
-            }
+        // Determine module output risk level
+        if (modulecard["output-risk"] === "inherit") {
+            output_risk = datasourcecard ? datasourcecard["risk-level"] : output_risk;
+            stepLog.reasons.push(`Module output risk level inherited as '${output_risk}'`);
         } else {
             output_risk = modulecard["output-risk"];
+            stepLog.reasons.push(`Module output risk level set to '${output_risk}'`);
         }
-
         stepLog.output_risk = output_risk;
-        console.log(`Output risk level: ${output_risk}`);
 
-        // Check if the output can be on the node
-        if (output_risk == "high" && nodecard["zone"] == "unsafe") {
+        // Validate output risk level
+        if (!allowedRiskLevels.includes(output_risk)) {
             stepLog.valid = false;
-            stepLog.reasons.push("High-risk output on unsafe node");
-            validationLogs.push(stepLog);
-            continue;
-            //throw new Error("High-risk output on unsafe node");
+            stepLog.reasons.push(`Output risk level '${output_risk}' not allowed in zone '${nodecard.zone}'`);
         } else {
-            stepLog.reasons.push("Output can be placed on node")
+            stepLog.reasons.push(`Output risk level '${output_risk}' allowed in zone '${nodecard.zone}'`);
         }
 
+        if (stepLog.valid) {
+            stepLog.reasons.push("Step validated successfully.");
+        }
         validationLogs.push(stepLog);
     }
 
     console.log("Validation logs:", validationLogs);
+    //console.log("Allowed risk levels by zone:", allowedRiskLevelsByZone);
 
     // Save the validation logs to the database
     const certificate = {
@@ -473,8 +445,197 @@ async function validateDeploymentSolution(deploymentId, solution, database) {
         });
         throw new Error("Deployment validation failed.");
     }
-
 }
+
+/**
+ * Validate the deployment solution
+ * @param {*} solution The deployment solution to validate.
+ * @param {*} database The database to use for validation.
+ */
+//async function validateDeploymentSolution(deploymentId, solution, database) {
+//    // Can module be placed on device?
+//    // Is input data source -> find data source on device
+//    // Infer output risk (from data source / temp output and func risk transform)
+//    // Can output be placed on device?
+//    // Keep output risk level for next step
+//
+//    const nodecards = database.collection("nodecards");
+//    const modulecards = database.collection("modulecards");
+//    const datasourcecards = database.collection("datasourcecards");
+//    const deploymentcertificates = database.collection("deploymentcertificates");
+//
+//    console.log("Validating deployment solution");
+//    console.log(solution);
+//
+//    const sequence = solution.sequence;
+//    let output_risk = "none";
+//    const validationLogs = [];
+//
+//    for (let step of sequence) {
+//        const device = step.device;
+//        const wasmmodule = step.module;
+//        const func = step.func;
+//        const stepLog = {
+//            device: device.id.toString('hex'),
+//            module: wasmmodule.id.toString('hex'),
+//            func: func,
+//            node_zone: "none",
+//            module_risk: "none",
+//            input_risk: "none",
+//            output_risk: "none",
+//            valid: true,
+//            reasons: []
+//        };
+//
+//        console.log(device.id.toString('hex'))
+//        console.log(wasmmodule.id.toString('hex'))
+//        console.log(func)
+//        if (!step.device) {
+//            throw "device not found";
+//        }
+//        if (!step.module) {
+//            throw "module not found";
+//        }
+//        if (!step.func) {
+//            throw "function not found";
+//        }
+//
+//        // Find the node card for the device and the module card for the module
+//        const nodecard = await nodecards.findOne({ nodeid: device.id.toString('hex') });
+//        const modulecard = await modulecards.findOne({ moduleid: wasmmodule.id.toString('hex') });
+//
+//        // Check that the node card and module card are found
+//        if (!nodecard) {
+//            stepLog.valid = false;
+//            stepLog.reasons.push(`Node card not found for device ${device.id.toString('hex')}`);
+//            validationLogs.push(stepLog);
+//            continue;
+//            //throw new Error(`Node card not found for device ${device.id.toString('hex')}`);
+//        } else {
+//            stepLog.node_zone = nodecard["zone"];
+//        }
+//
+//        if (!modulecard) {
+//            stepLog.valid = false;
+//            stepLog.reasons.push(`Module card not found for module ${wasmmodule.id.toString('hex')}`);
+//            validationLogs.push(stepLog);
+//            continue;
+//            //throw new Error(`Module card not found for module ${wasmmodule.id.toString('hex')}`);
+//        } else {
+//            stepLog.module_risk = modulecard["risk-level"];
+//        }
+//
+//        // Find the data source card for the input type of the module, if needed
+//        let datasourcecard = null;
+//        if (modulecard["input-type"] != "temp") {
+//            datasourcecard = await datasourcecards.findOne({ type: modulecard["input-type"], nodeid: device.id.toString('hex') });
+//            if(!datasourcecard) {
+//                stepLog.valid = false;
+//                stepLog.reasons.push(`Data source card not found for input type ${modulecard["input-type"]} on device ${device.id.toString('hex')}`);
+//                validationLogs.push(stepLog);
+//                continue;
+//                //throw new Error(`Data source card not found for input type ${modulecard["input-type"]} on device ${device.id.toString('hex')}`);
+//            } else {
+//                stepLog.input_risk = datasourcecard["risk-level"];
+//            }
+//            console.log(`Data source: ${datasourcecard.name}, risk-level: ${datasourcecard["risk-level"]}`);
+//        } else {
+//            stepLog.input_risk = output_risk;
+//        }
+//
+//        console.log("Node: " + nodecard.name + ", zone: " + nodecard["zone"]);
+//        console.log("Module: " + modulecard.name + ", risk-level: " + modulecard["risk-level"], ", output-risk: " + modulecard["output-risk"]);
+//
+//        // Check if the module can be placed on the node
+//        if (nodecard["zone"] == "unsafe") {
+//            if (modulecard["risk-level"] == "high") {
+//                stepLog.valid = false;
+//                stepLog.reasons.push("High-risk module on unsafe node");
+//                validationLogs.push(stepLog);
+//                continue;
+//                //throw new Error("High-risk module on unsafe node");
+//            } else {
+//                stepLog.reasons.push("Module can be placed on unsafe node")
+//            }
+//        } else {
+//            stepLog.reasons.push("Node is safe for modules")
+//        }
+//        
+//        // Check if input can be on the node
+//        if (datasourcecard) {
+//            if (datasourcecard["risk-level"] == "high" && nodecard["zone"] == "unsafe") {
+//                stepLog.valid = false;
+//                stepLog.reasons.push("High-risk input on unsafe node");
+//                validationLogs.push(stepLog);
+//                continue;
+//                //throw new Error("High-risk input on unsafe node");
+//            } else {
+//                stepLog.reasons.push("Data source can be read on node")
+//            }
+//        } else {
+//            if (output_risk == "high" && nodecard["zone"] == "unsafe") {
+//                stepLog.valid = false;
+//                stepLog.reasons.push("High-risk input on unsafe node");
+//                validationLogs.push(stepLog);
+//                continue;
+//                //throw new Error("High-risk input on unsafe node");
+//            } else {
+//                stepLog.reasons.push("Input can be on node")
+//            }
+//        }
+//
+//        // Infer module output risk level
+//        if (modulecard["output-risk"] == "inherit") {
+//            // Inherit risk level from data source or other input
+//            if (datasourcecard) {
+//                output_risk = datasourcecard["risk-level"];
+//            } else {
+//                // Keep the existing output risk level: output_risk = output_risk
+//            }
+//        } else {
+//            output_risk = modulecard["output-risk"];
+//        }
+//
+//        stepLog.output_risk = output_risk;
+//        console.log(`Output risk level: ${output_risk}`);
+//
+//        // Check if the output can be on the node
+//        if (output_risk == "high" && nodecard["zone"] == "unsafe") {
+//            stepLog.valid = false;
+//            stepLog.reasons.push("High-risk output on unsafe node");
+//            validationLogs.push(stepLog);
+//            continue;
+//            //throw new Error("High-risk output on unsafe node");
+//        } else {
+//            stepLog.reasons.push("Output can be placed on node")
+//        }
+//
+//        validationLogs.push(stepLog);
+//    }
+//
+//    console.log("Validation logs:", validationLogs);
+//
+//    // Save the validation logs to the database
+//    const certificate = {
+//        date: new Date(),
+//        deploymentId: deploymentId,
+//        valid: validationLogs.every(step => step.valid),
+//        validationLogs: validationLogs
+//    };
+//
+//    await deploymentcertificates.insertOne(certificate);
+//
+//    // Check if any step is invalid
+//    const invalidSteps = validationLogs.filter(step => !step.valid);
+//    if (invalidSteps.length > 0) {
+//        console.log("Deployment validation failed for the following steps:");
+//        invalidSteps.forEach(step => {
+//            console.error(`Device: ${step.device}, Module: ${step.module}, Function: ${step.func}`);
+//        });
+//        throw new Error("Deployment validation failed.");
+//    }
+//
+//}
 
 /**
  * Solve for M2M-call interfaces and create individual instructions
