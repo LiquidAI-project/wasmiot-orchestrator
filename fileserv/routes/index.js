@@ -13,6 +13,7 @@ const moduleCards = require("./moduleCards");
 const nodeCards = require("./nodeCards");
 const dataSourceCards = require("./dataSourceCards");
 const zoneRiskLevels = require("./zonesAndRiskLevels");
+const deploymentCertificates = require("./deploymentCertificates");
 
 
 /* Set common dependencies between the API routes. */
@@ -31,6 +32,8 @@ async function init(routeDependencies) {
     deployment.setDatabase(routeDependencies.database);
     deployment.setOrchestrator(routeDependencies.orchestrator);
 
+    deploymentCertificates.setDatabase(routeDependencies.database);
+
     execution.setDatabase(routeDependencies.database);
     execution.setOrchestrator(routeDependencies.orchestrator);
 
@@ -47,7 +50,8 @@ async function init(routeDependencies) {
         moduleCards: moduleCards.router,
         nodeCards: nodeCards.router,
         dataSourceCards: dataSourceCards.router,
-        zoneRiskLevels: zoneRiskLevels.router
+        zoneRiskLevels: zoneRiskLevels.router,
+        deploymentCertificates: deploymentCertificates.router
     };
 }
 
