@@ -62,6 +62,7 @@ async function setRoutes(routeDependencies) {
     app.use("/moduleCards",   routes.moduleCards);
     app.use("/nodeCards",     routes.nodeCards);
     app.use("/dataSourceCards",     routes.dataSourceCards);
+    app.use("/zoneRiskLevels", routes.zoneRiskLevels);
 
     // NOTE: This is for testing if for example an image file needs to be available
     // after execution of some deployed work.

@@ -12,6 +12,7 @@ const supervisorLogs = require("./logs");
 const moduleCards = require("./moduleCards");
 const nodeCards = require("./nodeCards");
 const dataSourceCards = require("./dataSourceCards");
+const zoneRiskLevels = require("./zonesAndRiskLevels");
 
 
 /* Set common dependencies between the API routes. */
@@ -24,6 +25,8 @@ async function init(routeDependencies) {
 
     modules.setDatabase(routeDependencies.database);
     moduleCards.setDatabase(routeDependencies.database);
+
+    zoneRiskLevels.setDatabase(routeDependencies.database);
 
     deployment.setDatabase(routeDependencies.database);
     deployment.setOrchestrator(routeDependencies.orchestrator);
@@ -43,7 +46,8 @@ async function init(routeDependencies) {
         logs: supervisorLogs.router,
         moduleCards: moduleCards.router,
         nodeCards: nodeCards.router,
-        dataSourceCards: dataSourceCards.router
+        dataSourceCards: dataSourceCards.router,
+        zoneRiskLevels: zoneRiskLevels.router
     };
 }
 
