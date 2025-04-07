@@ -4,9 +4,10 @@
  */
 
 const bonjour = require("bonjour-service");
-const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, PUBLIC_BASE_URI } = require("../constants.js");
+const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, PUBLIC_BASE_URI, DEVICE_HEALTHCHECK_FAILED_THRESHOLD } = require("../constants.js");
 
 const { ORCHESTRATOR_ADVERTISEMENT } = require("./orchestrator.js");
+const failedHealthCheckCounts = {};
 
 /**
  * Thing running the Wasm-IoT supervisor.
@@ -134,6 +135,7 @@ class DeviceManager {
 
             // Transform the service into usable device data.
             device = new Device(serviceData.name, serviceData.addresses, serviceData.port);
+            device.status = "active";
             this.deviceCollection.insertOne(device);
         } else {
             if (device.description && device.description.platform) {
@@ -269,51 +271,69 @@ class DeviceManager {
     async healthCheck(deviceName) {
         let devices = await (await this.deviceCollection.find(deviceName ? { name: deviceName } : {})).toArray();
 
-        let date = new Date();
-        let healthChecks = devices.map(x => ({
-                device: x.name,
-                // Gather promises to be awaited.
-                check: this.#healthCheckDevice(x),
-                timestamp: date,
-            }));
-
         let healthyCount = 0;
-        for (let x of healthChecks) {
-            let health;
+        for (let device of devices) {
             try {
-                health = await x.check;
-                if (health) {
-                    healthyCount++;
-                }
-                else {
-                    console.log(
-                        `Forgetting device with health problems (device: ${x.device}, timestamp: ${x.timestamp.toISOString()})`);
-                    this.#forgetDevice(x.device);
-                    continue;
-                }
-            } catch (e) {
-                console.log(
-                    `Forgetting device with health problems (device: ${x.device}, timestamp: ${x.timestamp.toISOString()}):`, e.message
-                );
-                this.#forgetDevice(x.device);
-                continue;
-            }
-
-            this.deviceCollection.updateOne(
-                { name: x.device },
-                {
-                    $set: {
-                        health: {
-                            report: health,
-                            timeOfQuery: x.timestamp,
+                const healthCheck = await this.successfulHealthCheck(device);
+                await this.deviceCollection.updateOne(
+                    { name: device.name },
+                    { $set:
+                        {
+                            status: "active",
+                            health:
+                            {
+                                report: healthCheck.result,
+                                timeOfQuery: healthCheck.timestamp,
+                            }
                         }
                     }
-                }
-            );
+                );
+                healthyCount++;
+            }
+            catch (e) {
+                await this.unsuccessfulHealthCheck(device);
+                await this.deviceCollection.updateOne(
+                    { name: device.name },
+                    {
+                        $set: { status: "inactive" }
+                    }
+                );
+            }
         }
+         
         return healthyCount;
     }
 
+    async successfulHealthCheck(device) {
+        const date = new Date();
+        const checkResult = await this.#healthCheckDevice(device);
+        failedHealthCheckCounts[device.name] = 0; // Reset failed health check count on successful health check
+        console.log('Health check count for device', device.name, 'reseted.');
+        
+        return {
+            result: checkResult,
+            timestamp: date,
+        }
+    }
+
+    async unsuccessfulHealthCheck(device) {
+        if (DEVICE_HEALTHCHECK_FAILED_THRESHOLD <= failedHealthCheckCounts[device.name]) {
+            console.log(`Device '${device.name}' remains inactive...`);
+            return;
+        }
+
+        failedHealthCheckCounts[device.name] = (failedHealthCheckCounts[device.name] || 0) + 1;
+        console.log('Health check failed for device', device.name, ', the count is:', failedHealthCheckCounts[device.name]);
+
+        if (DEVICE_HEALTHCHECK_FAILED_THRESHOLD <= failedHealthCheckCounts[device.name]) {
+            console.log(`Setting device '${device.name}' to inactive due to repeated health check failures.`);
+            //TODO: Tarkista onko laitetta käytetty deploymenteissa
+            //TODO: Logit databaseen active/inactive tilaan mennessä    
+        }
+        else {
+            console.log(`Incrementing failed health check count for device '${device.name}' (count: ${failedHealthCheckCounts[device.name]}).`);
+        }
+    }
 
     /**
      * Forget a device based on an identifier or one derived from mDNS service data.
@@ -376,6 +396,8 @@ class DeviceManager {
             catch (error) {
                 console.log(`Health-check failed for device '${device.name}' using address '${address}': ${error}`);
                 failedAddresses.push(address);
+                console.log(errorString);
+                throw error;
             }
         }
 
