@@ -4,7 +4,7 @@
  */
 
 const bonjour = require("bonjour-service");
-const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, PUBLIC_BASE_URI, DEVICE_HEALTHCHECK_FAILED_THRESHOLD } = require("../constants.js");
+const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, PUBLIC_BASE_URI, DEVICE_HEALTHCHECK_THRESHOLD } = require("../constants.js");
 
 const { ORCHESTRATOR_ADVERTISEMENT } = require("./orchestrator.js");
 const failedHealthCheckCounts = {};
@@ -135,7 +135,10 @@ class DeviceManager {
 
             // Transform the service into usable device data.
             device = new Device(serviceData.name, serviceData.addresses, serviceData.port);
-            device.status = "active";
+            device["status"] = "active";
+            device["failedHealthCheckCount"] = 0;
+            device["okHealthCheckCount"] = 0;
+            device["statusLog"] = [];
             this.deviceCollection.insertOne(device);
         } else {
             if (device.description && device.description.platform) {
@@ -272,68 +275,86 @@ class DeviceManager {
         let devices = await (await this.deviceCollection.find(deviceName ? { name: deviceName } : {})).toArray();
 
         let healthyCount = 0;
+        const date = new Date();
         for (let device of devices) {
+            if (!device["failedHealthCheckCount"]) {
+                device["failedHealthCheckCount"] = 0;
+            }
+            if (!device["okHealthCheckCount"]) {
+                device["okHealthCheckCount"] = 0;
+            }
+            if (!device["statusLog"]) {
+                device["statusLog"] = [];
+            }
             try {
-                const healthCheck = await this.successfulHealthCheck(device);
-                await this.deviceCollection.updateOne(
-                    { name: device.name },
-                    { $set:
-                        {
-                            status: "active",
-                            health:
-                            {
-                                report: healthCheck.result,
-                                timeOfQuery: healthCheck.timestamp,
-                            }
-                        }
-                    }
-                );
-                healthyCount++;
+                if (await this.successfulHealthCheck(device, this.deviceCollection, date)) {
+                    healthyCount++;
+                }
             }
             catch (e) {
-                await this.unsuccessfulHealthCheck(device);
-                await this.deviceCollection.updateOne(
-                    { name: device.name },
-                    {
-                        $set: { status: "inactive" }
-                    }
-                );
+                await this.unsuccessfulHealthCheck(device, this.deviceCollection, date);
             }
         }
          
         return healthyCount;
     }
 
-    async successfulHealthCheck(device) {
-        const date = new Date();
+    async successfulHealthCheck(device, deviceCollection, date) {
         const checkResult = await this.#healthCheckDevice(device);
-        failedHealthCheckCounts[device.name] = 0; // Reset failed health check count on successful health check
-        console.log('Health check count for device', device.name, 'reseted.');
-        
-        return {
-            result: checkResult,
-            timestamp: date,
+
+        device["health"] = {
+            report: checkResult,
+            timeOfQuery: date
+        };
+        device["failedHealthCheckCount"] = 0;
+        device["okHealthCheckCount"] = (device["okHealthCheckCount"] || 0) + 1;
+        console.log('Health check count for device', device.name, 'okay, count:', device["okHealthCheckCount"]);
+
+        if (device["status"] != "active" && DEVICE_HEALTHCHECK_THRESHOLD <= device["okHealthCheckCount"]) {
+            device["status"] = "active";
+            device["statusLog"].unshift({ status: "active", time: date });
+            console.log("Device", device.name, "is now active");
         }
+
+        await this.updateDevice(device, deviceCollection);
+
+        return device["status"] === "active";
     }
 
-    async unsuccessfulHealthCheck(device) {
-        if (DEVICE_HEALTHCHECK_FAILED_THRESHOLD <= failedHealthCheckCounts[device.name]) {
-            console.log(`Device '${device.name}' remains inactive...`);
-            return;
-        }
+    async unsuccessfulHealthCheck(device, deviceCollection, date) {
+        device["health"] = {
+            report: null,
+            timeOfQuery: date
+        };
+        device["okHealthCheckCount"] = 0;
+        device["failedHealthCheckCount"] = (device["failedHealthCheckCount"] || 0) + 1;
+        console.log('Health check count for device', device.name, 'failed, count:', device["failedHealthCheckCount"]);
 
-        failedHealthCheckCounts[device.name] = (failedHealthCheckCounts[device.name] || 0) + 1;
-        console.log('Health check failed for device', device.name, ', the count is:', failedHealthCheckCounts[device.name]);
-
-        if (DEVICE_HEALTHCHECK_FAILED_THRESHOLD <= failedHealthCheckCounts[device.name]) {
-            console.log(`Setting device '${device.name}' to inactive due to repeated health check failures.`);
+        if (device["status"] != "inactive" && DEVICE_HEALTHCHECK_THRESHOLD <= device["failedHealthCheckCount"]) {
+            device["status"] = "inactive";
+            device["statusLog"].unshift({ status: "inactive", time: date });
+            console.log("Device", device.name, "is now inactive");
             //TODO: Tarkista onko laitetta käytetty deploymenteissa
-            //TODO: Logit databaseen active/inactive tilaan mennessä    
         }
-        else {
-            console.log(`Incrementing failed health check count for device '${device.name}' (count: ${failedHealthCheckCounts[device.name]}).`);
-        }
+
+        await this.updateDevice(device, deviceCollection);
     }
+
+    async updateDevice(device, deviceCollection) {
+        await deviceCollection.updateOne(
+            { name: device.name },
+            { $set:
+                {
+                    status: device["status"],
+                    failedHealthCheckCount: device["failedHealthCheckCount"],
+                    okHealthCheckCount: device["okHealthCheckCount"],
+                    statusLog: device["statusLog"],
+                    health: device["health"]
+                }
+            }
+        );
+    }
+        
 
     /**
      * Forget a device based on an identifier or one derived from mDNS service data.
