@@ -172,16 +172,14 @@ class Orchestrator {
         //startSearch();
 
         let assignedSequence = fetchAndFindResources(hydratedManifest.sequence, availableDevices);
-
         // Now that the deployment is deemed possible, an ID is needed to
         // construct the instructions on devices.
         let deploymentId;
         if (resolving) {
             deploymentId = manifest._id;
         } else {
-            deploymentId = (await this.deploymentCollection.insertOne(manifest)).insertedId;
+            deploymentId = (await this.deploymentCollection.insertOne({manifest, active: false})).insertedId;
         }
-
         let solution = createSolution(deploymentId, assignedSequence, this.packageManagerBaseUrl)
 
         // Check validity of the solution.
