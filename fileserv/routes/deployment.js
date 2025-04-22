@@ -60,6 +60,30 @@ const getDeployments = async (request, response) => {
 }
 
 /**
+ * Fetch all deployments from database that are active and include the deviceId.
+ * @param {*} deviceId 
+ * @returns list of deployments that are active and include the deviceId.
+ */
+const fetchDeployments = async (deviceId) => {
+    const deployments = await (await deploymentCollection.find()).toArray();
+    const deviceDeployments = [];
+
+    for (const deployment of deployments) {
+        if (!deployment.active || !Array.isArray(deployment.sequence)) continue;
+
+        const includesDevice = deployment.sequence.some(step =>
+            step.device && step.device.equals(deviceId)
+        );
+
+        if (includesDevice) {
+            deviceDeployments.push(deployment);
+        }
+    }
+
+    return deviceDeployments;
+}
+
+/**
  * POST a deployment manifest to solve save and enact immediately. For now this
  * replaces an existing deployment with the same name (which isn't really
  * aligned with a ReStFuL PoSt...).
@@ -215,4 +239,4 @@ router.put("/:deploymentId", updateDeployment);
 router.delete("/", deleteDeployments);
 
 
-module.exports = { setDatabase, setOrchestrator, router };
+module.exports = { setDatabase, setOrchestrator, router, fetchDeployments };

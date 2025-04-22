@@ -3,6 +3,8 @@
  * supervisor.
  */
 
+const { fetchDeployments } = require("./../routes/deployment.js");
+
 const bonjour = require("bonjour-service");
 const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, PUBLIC_BASE_URI, DEVICE_HEALTHCHECK_THRESHOLD } = require("../constants.js");
 
@@ -334,7 +336,13 @@ class DeviceManager {
             device["status"] = "inactive";
             device["statusLog"].unshift({ status: "inactive", time: date });
             console.log("Device", device.name, "is now inactive");
-            //TODO: Tarkista onko laitetta käytetty deploymenteissa
+            
+            //Checks if the device going to inactive state has been used in active deployments
+            const deviceId = device._id.toString();
+
+            const inactiveDeviceDeployments = await fetchDeployments(deviceId);
+            console.log("Deployments for inactive device:");
+            console.log(inactiveDeviceDeployments);
         }
 
         await this.updateDevice(device, deviceCollection);
