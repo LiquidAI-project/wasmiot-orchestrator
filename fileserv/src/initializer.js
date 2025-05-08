@@ -107,7 +107,7 @@ function getRequiredFiles(modules) {
             files.push(new DataFile(originalPath, targetPath));
         }
         if (module.dataFiles && module.dataFiles.constructor === Object) {
-            for (const [_, dataFile] of Object.entries(module.dataFiles)) {
+            for (const [, dataFile] of Object.entries(module.dataFiles)) {
                 const originalPath = `${INIT_FOLDER}/${FILES}/${dataFile.originalFilename}`;
                 const targetPath = dataFile.path;
                 files.push(new DataFile(originalPath, targetPath));
@@ -196,7 +196,7 @@ async function initDeployments(database) {
             }
         }
         if (deployment.fullManifest && deployment.fullManifest.constructor === Object) {
-            for (const [_, device] of Object.entries(deployment.fullManifest)) {
+            for (const [, device] of Object.entries(deployment.fullManifest)) {
                 if (device.deploymentId) {
                     device.deploymentId = ObjectId(device.deploymentId);
                 }
