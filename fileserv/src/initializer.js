@@ -3,7 +3,7 @@
  */
 
 const fs = require("fs");
-const { ObjectId,  } = require("mongodb");
+const { ObjectId } = require("mongodb");
 const { CLEAR_LOGS, INIT_FOLDER, INTERNAL_BASE_URI } = require("../constants.js");
 
 const DEVICE = "device";
@@ -47,7 +47,7 @@ function loadJsonData(folder) {
     function addObjectToList(itemList, item, filename) {
         if (item && item.constructor === Object) {
             if (item._id) {
-                item._id = ObjectId(item._id);
+                item._id = new ObjectId(item._id.toString());
             }
             itemList.push(item);
         }
@@ -188,17 +188,17 @@ async function initDeployments(database) {
         if (deployment.sequence && deployment.sequence.constructor === Array) {
             for (let sequenceItem of deployment.sequence) {
                 if (sequenceItem.device) {
-                    sequenceItem.device = ObjectId(sequenceItem.device);
+                    sequenceItem.device = new ObjectId(sequenceItem.device);
                 }
                 if (sequenceItem.module) {
-                    sequenceItem.module = ObjectId(sequenceItem.module);
+                    sequenceItem.module = new ObjectId(sequenceItem.module);
                 }
             }
         }
         if (deployment.fullManifest && deployment.fullManifest.constructor === Object) {
             for (const [, device] of Object.entries(deployment.fullManifest)) {
                 if (device.deploymentId) {
-                    device.deploymentId = ObjectId(device.deploymentId);
+                    device.deploymentId = new ObjectId(device.deploymentId);
                 }
                 if (device.modules && device.modules.constructor === Array) {
                     for (let module of device.modules) {
@@ -206,7 +206,7 @@ async function initDeployments(database) {
                             continue;
                         }
                         if (module.id) {
-                            module.id = ObjectId(module.id);
+                            module.id = new ObjectId(module.id);
                         }
                         if (module.urls && module.urls.constructor === Object) {
                             if (module.urls.binary) {

@@ -4,11 +4,12 @@
 
 const express = require("express");
 const cors = require('cors');
+const mime = require('mime-types');
 
 const { FRONT_END_DIR, SENTRY_DSN, UTILS_PATH } = require("../constants.js");
 
 
-express.static.mime.define({"application/wasm": ["wasm"]});
+mime.extensions["application/wasm"] = ["wasm"];
 
 
 let app;
@@ -80,8 +81,8 @@ async function setRoutes(routeDependencies) {
     app.get("/utils.js", (_, response) => { response.sendFile(UTILS_PATH); });
 
     // Direct to error-page when bad URL used.
-    app.all("/*", (_, response) => {
-        response.status(404).send({ err: "Bad URL" });
+    app.use((_, res) => {
+        res.status(404).send({ err: "Bad URL" });
     });
 }
 

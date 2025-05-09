@@ -4,7 +4,7 @@
 
 const { chdir } = require('process');
 
-const { MongoClient, ObjectId } = require("mongodb");
+const { MongoClient } = require("mongodb");
 
 const { MONGO_URI, PUBLIC_PORT, PUBLIC_BASE_URI, DEVICE_TYPE } = require("./constants.js");
 const { init: initApp } = require("./src/app");
@@ -32,6 +32,7 @@ let server;
  * For operations on the database connection and its collections.
  */
 let database;
+let databaseClient;
 
 /**
  * Thing to use for searching and listing services found (by mDNS).
@@ -105,12 +106,12 @@ main()
 * @throws If the connection fails (timeouts).
 */
 async function initializeDatabase() {
-    let client = new MongoClient(MONGO_URI);
-    console.log("Connecting to database client: ", client);
+    databaseClient = new MongoClient(MONGO_URI);
+    console.log("Connecting to database client: ", databaseClient);
 
     try {
-        await client.connect();
-        database = client.db();
+        await databaseClient.connect();
+        database = databaseClient.db();
         console.log("Database connection success!");
     } catch(e) {
         console.error("Database connection fail.");
@@ -189,7 +190,7 @@ async function shutDown() {
     }
 
     if (database) {
-        await database.close();
+        await databaseClient.close();
         console.log("Closed database connection.");
     }
 

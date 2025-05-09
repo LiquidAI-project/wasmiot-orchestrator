@@ -130,7 +130,7 @@ class MongoDatabase extends Database {
      */
     wrapId(filter) {
         if (filter && Database.idField in filter) {
-            filter[Database.idField] = ObjectId(filter[Database.idField]);
+            filter[Database.idField] = new ObjectId(filter[Database.idField].toString());
         }
     }
 }

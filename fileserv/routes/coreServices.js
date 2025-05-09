@@ -82,7 +82,7 @@ async function initializeCoreServices() {
     }
 
     // Add a flag to the entry to mark it as core-module.
-    await database.collection("module").updateOne({ _id: ObjectId(id) }, { $set: { isCoreModule: true } });
+    await database.collection("module").updateOne({ _id: new ObjectId(id.toString()) }, { $set: { isCoreModule: true } });
 
     serviceIds[metadata.name] = id;
 

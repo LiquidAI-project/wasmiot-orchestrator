@@ -24,7 +24,7 @@ function setOrchestrator(orch) {
 const execute = async (request, response) => {
     let filter = {};
     try {
-        filter._id = ObjectId(request.params.deploymentId);
+        filter._id = new ObjectId(request.params.deploymentId);
     } catch (e) {
         console.error(`Passed in deployment-ID '${request.params.deploymentId}' not compatible as ObjectID. Using it as 'name' instead`);
         filter.name = request.params.deploymentId;
