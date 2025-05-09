@@ -17,8 +17,12 @@ services:
       MONGO_PORT: ${MONGO_PORT:-27017}
       MONGO_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
       MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      PUBLIC_HOST: ${PUBLIC_HOST:-}
+      PUBLIC_PORT: ${PUBLIC_PORT:-3000}
+      SENTRY_DSN: ${SENTRY_DSN:-}
       WASMIOT_INIT_FOLDER: ${WASMIOT_INIT_FOLDER:-/init}
       WASMIOT_CLEAR_LOGS: ${WASMIOT_CLEAR_LOGS:-true}
+      WASMIOT_USE_WEB_SOCKETS: ${WASMIOT_USE_WEB_SOCKETS:-false}
     volumes:
       - ./init:/init
     command: nodejs ./server.js

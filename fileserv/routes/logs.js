@@ -1,5 +1,6 @@
 const express = require("express");
 const WebSocket = require("ws");
+const constants = require("../constants.js");
 
 let collection = null;
 let wss = null;
@@ -7,8 +8,11 @@ let lastChecked = new Date();
 
 async function setDatabase(db) {
     collection = db.collection("supervisorLogs");
-    // Start the polling mechanism
-    pollForNewLogs();
+
+    if (constants.USE_WEBSOCKET) {
+        // Start the polling mechanism
+        pollForNewLogs();
+    };
 }
 
 function setWebSocketServer(webSocketServer) {

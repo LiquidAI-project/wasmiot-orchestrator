@@ -26,7 +26,9 @@ async function init(appDependencies) {
         checkSentry();
     }
 
-    app.use(cors()); 
+    // Allow cross-origin requests
+    // - could provide more fine-grained control in the future
+    app.use(cors());
 
     await setRoutes(appDependencies);
 

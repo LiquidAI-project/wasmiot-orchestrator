@@ -21,6 +21,8 @@ const PUBLIC_PORT = process.env.PUBLIC_PORT || "3000";
 const PUBLIC_BASE_URI = `${PUBLIC_HOST}:${PUBLIC_PORT}/`;
 const INTERNAL_BASE_URI = process.env.USE_INTERNAL_HOST === "true" ? `${INTERNAL_HOST}:${PUBLIC_PORT}/` : PUBLIC_BASE_URI;
 
+const USE_WEBSOCKET = process.env.WASMIOT_USE_WEB_SOCKETS === "true";
+
 const INIT_FOLDER = process.env.WASMIOT_INIT_FOLDER || "/init";
 const CLEAR_LOGS = process.env.WASMIOT_CLEAR_LOGS === "true";
 
@@ -63,6 +65,7 @@ module.exports = {
     PUBLIC_PORT,
     PUBLIC_BASE_URI,
     INTERNAL_BASE_URI,
+    USE_WEBSOCKET,
     MODULE_DIR,
     DEVICE_DESC_ROUTE,
     DEVICE_HEALTH_ROUTE,
