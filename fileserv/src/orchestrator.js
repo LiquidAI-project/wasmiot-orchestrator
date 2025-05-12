@@ -151,7 +151,9 @@ class Orchestrator {
         // The original deployment should be saved to database as is with the
         // IDs TODO: Exactly why should it be saved?.
         let hydratedManifest = structuredClone(manifest);
+        let i = 0;
         for (let step of hydratedManifest.sequence) {
+            const manifestStep = manifest.sequence[i];
             step.device = availableDevices.find(x => x._id.toString() === step.device);
             // Find with id or name to support finding core modules more easily.
             let filter = {};
@@ -166,6 +168,11 @@ class Orchestrator {
             // from registry/URL if not found locally.
             // TODO: Actually use a remote-fetch.
             step.module = await this.moduleCollection.findOne(filter);
+            // Handle the failovers field in original manifest.
+            if (!Array.isArray(manifestStep.failovers) || manifestStep.failovers.length === 0) {
+                manifestStep.failovers = null;
+            }
+            i++;
         }
 
         //TODO: Start searching for suitable packages using saved file.
