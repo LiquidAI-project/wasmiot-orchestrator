@@ -1,0 +1,126 @@
+services:
+  mongo:
+    image: mongo:6.0.23
+    container_name: wasmiot-mongodb
+    restart: unless-stopped
+    networks:
+      database:
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    ports:
+      - ${MONGO_PORT:-27017}:27017
+    volumes:
+      - mongo-config:/data/configdb
+      - mongo-db:/data/db
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: wasmiot-mongo-express
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      ME_CONFIG_MONGODB_SERVER: ${MONGO_HOST:-mongo}
+      ME_CONFIG_MONGODB_PORT: ${MONGO_PORT:-27017}
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: ${MONGO_EXPRESS_ENABLE_ADMIN:-false}
+      ME_CONFIG_MONGODB_AUTH_USERNAME: ${MONGO_ROOT_USERNAME}
+      ME_CONFIG_MONGODB_AUTH_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      ME_CONFIG_BASICAUTH: ${MONGO_EXPRESS_BASICAUTH:-false}
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
+    ports:
+      - ${MONGO_EXPRESS_PORT:-8081}:8081
+    networks:
+      database:
+
+  orchestrator:
+    image: ghcr.io/liquidai-project/wasmiot-orchestrator
+    container_name: wasmiot-orchestrator
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    build:
+      context: ../fileserv
+      dockerfile: ./Dockerfile-production
+    ports:
+      - ${PUBLIC_PORT:-3000}:3000
+    networks:
+      wasmiot:
+        ipv4_address: 172.18.0.2
+      database:
+    environment:
+      MONGO_HOST: ${MONGO_HOST:-127.0.0.1}
+      MONGO_PORT: ${MONGO_PORT:-27017}
+      MONGO_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      WASMIOT_INIT_FOLDER: ${WASMIOT_INIT_FOLDER:-/init}
+      WASMIOT_CLEAR_LOGS: ${WASMIOT_CLEAR_LOGS:-true}
+    volumes:
+      - ./test1/orchestrator/init:/init
+      - ./test1/orchestrator/files:/app/fileserv/files
+
+  supervisor-1:
+    image: ghcr.io/liquidai-project/wasmiot-supervisor
+    container_name: wasmiot-supervisor-1
+    restart: unless-stopped
+    depends_on:
+      - orchestrator
+    build:
+      context: ../wasmiot-supervisor
+      dockerfile: ./Dockerfile-production
+    ports:
+      - ${SUPERVISOR_1_PORT:-5001}:${SUPERVISOR_1_PORT:-5001}
+    environment:
+      FLASK_APP: supervisor-1
+      FLASK_PORT: ${SUPERVISOR_1_PORT:-5001}
+      FLASK_ENV: production
+      FLASK_DEBUG: 0
+    volumes:
+      - ./test1/device1/configs:/app/instance/configs
+      - ./test1/device1/modules:/app/instance/modules
+      - ./test1/device1/output:/app/instance/output
+    networks:
+      wasmiot:
+        ipv4_address: 172.18.0.21
+
+  supervisor-2:
+    image: ghcr.io/liquidai-project/wasmiot-supervisor
+    container_name: wasmiot-supervisor-2
+    restart: unless-stopped
+    depends_on:
+      - orchestrator
+    build:
+      context: ../wasmiot-supervisor
+      dockerfile: ./Dockerfile-production
+    ports:
+      - ${SUPERVISOR_2_PORT:-5002}:${SUPERVISOR_2_PORT:-5002}
+    environment:
+      FLASK_APP: supervisor-2
+      FLASK_PORT: ${SUPERVISOR_2_PORT:-5002}
+      FLASK_ENV: production
+      FLASK_DEBUG: 0
+    volumes:
+      - ./test1/device2/configs:/app/instance/configs
+      - ./test1/device2/modules:/app/instance/modules
+      - ./test1/device2/output:/app/instance/output
+    networks:
+      wasmiot:
+        ipv4_address: 172.18.0.22
+
+volumes:
+  mongo-config:
+    name: wasmiot-mongo-config
+  mongo-db:
+    name: wasmiot-mongo-db
+
+networks:
+  wasmiot:
+    name: wasmiot-net
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.18.0.0/24
+  database:
+    name: wasmiot-database-net
