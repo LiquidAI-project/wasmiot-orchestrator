@@ -1,7 +1,7 @@
 {
     "@context": "https://www.w3.org/2022/wot/td/v1.1",
     "@type": "Thing",
-    "title": "Laptop-2",
+    "title": "Laptop-3",
     "description": "A laptop",
     "properties": {
         "platform": {
