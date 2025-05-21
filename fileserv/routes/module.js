@@ -560,6 +560,7 @@ router.post(
     fileUpload,
     describeModule,
 );
+router.get("/", getModule(false));
 router.get("/:moduleId", getModule(false));
 router.get("/:moduleId/description", getModule(true));
 router.get("/:moduleId/:filename", getModuleFile);
