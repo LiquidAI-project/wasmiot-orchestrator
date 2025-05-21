@@ -317,7 +317,7 @@ class DeviceManager {
      * @throws If there were error querying the device.
      */
     async #healthCheckDevice(device) {
-        let url = new URL(`http://${device.communication.addresses[0]}:${device.communication.port}/${device.healthCheckPath || DEVICE_HEALTH_ROUTE}`);
+        let url = new URL(`http://${device.communication.addresses[0]}:${device.communication.port}/${device.healthCheckPath || DEVICE_HEALTH_ROUTE.substring(1)}`);
         try {
             const public_ip = new URL(PUBLIC_BASE_URI).hostname;
             let res = await fetch(url, {headers: {"X-Forwarded-For": public_ip}})
