@@ -55,6 +55,8 @@ services:
       wasmiot-main:
         ipv4_address: ${INTERNAL_ORCHESTRATOR_IP}
       database:
+    extra_hosts:
+      - ${HOST_ADDRESS}:host-gateway
     environment:
       MONGO_HOST: ${MONGO_HOST}
       MONGO_PORT: ${MONGO_PORT}
@@ -122,6 +124,8 @@ services:
     networks:
       wasmiot-main:
         ipv4_address: ${INTERNAL_SUPERVISOR_PYTHON_IP}
+    extra_hosts:
+      - ${HOST_ADDRESS}:host-gateway
 
   supervisor-rust:
     image: ghcr.io/liquidai-project/supervisor-rust-port
@@ -147,6 +151,8 @@ services:
     networks:
       wasmiot-main:
         ipv4_address: ${INTERNAL_SUPERVISOR_RUST_IP}
+    extra_hosts:
+      - ${HOST_ADDRESS}:host-gateway
 
 volumes:
   mongo-config:
