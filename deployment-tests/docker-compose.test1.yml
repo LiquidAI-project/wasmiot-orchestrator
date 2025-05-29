@@ -8,8 +8,6 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
-    ports:
-      - ${MONGO_PORT:-27017}:27017
     volumes:
       - mongo-config:/data/configdb
       - mongo-db:/data/db
@@ -34,6 +32,16 @@ services:
     networks:
       database:
 
+  mdns-reflector:
+    image: flungo/avahi:main
+    container_name: wasmiot-mdns-reflector
+    restart: unless-stopped
+    environment:
+      REFLECTOR_ENABLE_REFLECTOR: "yes"
+    networks:
+      wasmiot-main:
+        ipv4_address: ${INTERNAL_MDNS_REFLECTOR_IP}
+
   orchestrator:
     image: ghcr.io/liquidai-project/wasmiot-orchestrator
     container_name: wasmiot-orchestrator
@@ -43,28 +51,54 @@ services:
     build:
       context: ../fileserv
       dockerfile: ./Dockerfile-production
-    ports:
-      - ${PUBLIC_PORT:-3000}:3000
     networks:
-      wasmiot:
-        ipv4_address: 172.21.0.10
+      wasmiot-main:
+        ipv4_address: ${INTERNAL_ORCHESTRATOR_IP}
       database:
     environment:
-      MONGO_HOST: ${MONGO_HOST:-127.0.0.1}
-      MONGO_PORT: ${MONGO_PORT:-27017}
+      MONGO_HOST: ${MONGO_HOST}
+      MONGO_PORT: ${MONGO_PORT}
       MONGO_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
       MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
-      PUBLIC_HOST: ${PUBLIC_HOST}
-      PUBLIC_PORT: ${PUBLIC_PORT}
+      PUBLIC_HOST: ${ORCHESTRATOR_PUBLIC_HOST}
+      PUBLIC_PORT: ${ORCHESTRATOR_PUBLIC_PORT}
       WASMIOT_INIT_FOLDER: ${WASMIOT_INIT_FOLDER:-/init}
       WASMIOT_CLEAR_LOGS: ${WASMIOT_CLEAR_LOGS:-true}
+      WASMIOT_USE_WEB_SOCKETS: ${WASMIOT_USE_WEB_SOCKETS:-true}
     volumes:
       - ./test1/orchestrator/init:/init
       - ./test1/orchestrator/files:/app/fileserv/files
 
-  supervisor-python-1:
+  nginx-proxy:
+    image: nginx:1.27.5
+    container_name: wasmiot-nginx
+    restart: unless-stopped
+    ports:
+      - 0.0.0.0:80:80
+    environment:
+      ORCHESTRATOR_IP: ${INTERNAL_ORCHESTRATOR_IP}
+      ORCHESTRATOR_PORT: ${ORCHESTRATOR_PUBLIC_PORT}
+    volumes:
+      - ./test1/orchestrator/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./test1/orchestrator/nginx/templates/10-variables.conf:/etc/nginx/templates/10-variables.conf.template:ro
+    networks:
+      wasmiot-main:
+        ipv4_address: ${INTERNAL_NGINX_IP}
+
+  mdns-server:
+    image: ghcr.io/liquidai-project/wasmiot-mdns-server
+    container_name: wasmiot-mdns-server
+    restart: unless-stopped
+    build:
+      context: ./mdns-server
+      dockerfile: ./Dockerfile
+    networks:
+      wasmiot-main:
+        ipv4_address: ${INTERNAL_MDNS_SERVER_IP}
+
+  supervisor-python:
     image: ghcr.io/liquidai-project/wasmiot-supervisor
-    container_name: wasmiot-supervisor-python-1
+    container_name: wasmiot-supervisor-python
     restart: unless-stopped
     depends_on:
       - orchestrator
@@ -72,53 +106,26 @@ services:
       context: ../wasmiot-supervisor
       dockerfile: ./Dockerfile-production
     ports:
-      - ${SUPERVISOR_PYTHON_1_PORT}:${SUPERVISOR_PYTHON_1_PORT}
+      - ${SUPERVISOR_PYTHON_DOCKER_PORT}:${SUPERVISOR_PYTHON_DOCKER_PORT}
     environment:
-      FLASK_APP: supervisor-python-1
-      FLASK_PORT: ${SUPERVISOR_PYTHON_1_PORT}
+      FLASK_APP: ${SUPERVISOR_PYTHON_DOCKER_NAME}
+      FLASK_PORT: ${SUPERVISOR_PYTHON_DOCKER_PORT}
       FLASK_ENV: production
       FLASK_DEBUG: 0
-      WASMIOT_ORCHESTRATOR_URL: ${WASMIOT_ORCHESTRATOR_URL}
+      # WASMIOT_ORCHESTRATOR_URL: ${WASMIOT_ORCHESTRATOR_URL}
       WASMIOT_LOGGING_ENDPOINT: ${WASMIOT_LOGGING_ENDPOINT}
-      # EXTERNAL_LOGGING_ENABLED: true
+      EXTERNAL_LOGGING_ENABLED: true
     volumes:
-      - ./test1/device-python-1/configs:/app/instance/configs
-      - ./test1/device-python-1/modules:/app/instance/modules
-      - ./test1/device-python-1/output:/app/instance/output
+      - ./test1/device-python-docker/configs:/app/instance/configs
+      - ./test1/device-python-docker/modules:/app/instance/modules
+      - ./test1/device-python-docker/output:/app/instance/output
     networks:
-      wasmiot:
-        ipv4_address: 172.21.0.21
+      wasmiot-main:
+        ipv4_address: ${INTERNAL_SUPERVISOR_PYTHON_IP}
 
-  supervisor-python-2:
-    image: ghcr.io/liquidai-project/wasmiot-supervisor
-    container_name: wasmiot-supervisor-python-2
-    restart: unless-stopped
-    depends_on:
-      - orchestrator
-    build:
-      context: ../wasmiot-supervisor
-      dockerfile: ./Dockerfile-production
-    ports:
-      - ${SUPERVISOR_PYTHON_2_PORT}:${SUPERVISOR_PYTHON_2_PORT}
-    environment:
-      FLASK_APP: supervisor-python-2
-      FLASK_PORT: ${SUPERVISOR_PYTHON_2_PORT}
-      FLASK_ENV: production
-      FLASK_DEBUG: 0
-      WASMIOT_ORCHESTRATOR_URL: ${WASMIOT_ORCHESTRATOR_URL}
-      WASMIOT_LOGGING_ENDPOINT: ${WASMIOT_LOGGING_ENDPOINT}
-      # EXTERNAL_LOGGING_ENABLED: true
-    volumes:
-      - ./test1/device-python-2/configs:/app/instance/configs
-      - ./test1/device-python-2/modules:/app/instance/modules
-      - ./test1/device-python-2/output:/app/instance/output
-    networks:
-      wasmiot:
-        ipv4_address: 172.21.0.22
-
-  supervisor-rust-1:
+  supervisor-rust:
     image: ghcr.io/liquidai-project/supervisor-rust-port
-    container_name: wasmiot-supervisor-rust-1
+    container_name: wasmiot-supervisor-rust
     restart: unless-stopped
     depends_on:
       - orchestrator
@@ -126,49 +133,20 @@ services:
       context: ../supervisor-rust-port
       dockerfile: ./Dockerfile
     ports:
-      - ${SUPERVISOR_RUST_1_PORT}:${SUPERVISOR_RUST_1_PORT}
+      - ${SUPERVISOR_RUST_DOCKER_PORT}:${SUPERVISOR_RUST_DOCKER_PORT}
     environment:
-      SUPERVISOR_NAME: supervisor-rust-1
-      WASMIOT_SUPERVISOR_PORT: ${SUPERVISOR_RUST_1_PORT}
-      WASMIOT_ORCHESTRATOR_URL: ${WASMIOT_ORCHESTRATOR_URL}
+      SUPERVISOR_NAME: ${SUPERVISOR_RUST_DOCKER_NAME}
+      WASMIOT_SUPERVISOR_PORT: ${SUPERVISOR_RUST_DOCKER_PORT}
+      # WASMIOT_ORCHESTRATOR_URL: ${WASMIOT_ORCHESTRATOR_URL}
       WASMIOT_LOGGING_ENDPOINT: ${WASMIOT_LOGGING_ENDPOINT}
       EXTERNAL_LOGGING_ENABLED: true
-      DEFAULT_URL_SCHEME: http
-      WASMIOT_SUPERVISOR_IP: 172.21.0.31
     volumes:
-      - ./test1/device-rust-1/configs:/app/instance/configs
-      - ./test1/device-rust-1/modules:/app/instance/modules
-      - ./test1/device-rust-1/output:/app/instance/output
+      - ./test1/device-rust-docker/configs:/app/instance/configs
+      - ./test1/device-rust-docker/modules:/app/instance/modules
+      - ./test1/device-rust-docker/output:/app/instance/output
     networks:
-      wasmiot:
-        ipv4_address: 172.21.0.31
-
-  supervisor-rust-2:
-    image: ghcr.io/liquidai-project/supervisor-rust-port
-    container_name: wasmiot-supervisor-rust-2
-    restart: unless-stopped
-    depends_on:
-      - orchestrator
-    build:
-      context: ../supervisor-rust-port
-      dockerfile: ./Dockerfile
-    ports:
-      - ${SUPERVISOR_RUST_2_PORT}:${SUPERVISOR_RUST_2_PORT}
-    environment:
-      SUPERVISOR_NAME: supervisor-rust-2
-      WASMIOT_SUPERVISOR_PORT: ${SUPERVISOR_RUST_2_PORT}
-      WASMIOT_ORCHESTRATOR_URL: ${WASMIOT_ORCHESTRATOR_URL}
-      WASMIOT_LOGGING_ENDPOINT: ${WASMIOT_LOGGING_ENDPOINT}
-      EXTERNAL_LOGGING_ENABLED: true
-      DEFAULT_URL_SCHEME: http
-      WASMIOT_SUPERVISOR_IP: 172.21.0.32
-    volumes:
-      - ./test1/device-rust-2/configs:/app/instance/configs
-      - ./test1/device-rust-2/modules:/app/instance/modules
-      - ./test1/device-rust-2/output:/app/instance/output
-    networks:
-      wasmiot:
-        ipv4_address: 172.21.0.32
+      wasmiot-main:
+        ipv4_address: ${INTERNAL_SUPERVISOR_RUST_IP}
 
 volumes:
   mongo-config:
@@ -177,12 +155,12 @@ volumes:
     name: wasmiot-mongo-db-test
 
 networks:
-  wasmiot:
-    name: wasmiot-net-test
+  wasmiot-main:
+    name: wasmiot-net-main
     driver: bridge
     ipam:
       driver: default
       config:
-        - subnet: 172.21.0.0/24
+        - subnet: 172.20.0.0/24
   database:
     name: wasmiot-database-net-test

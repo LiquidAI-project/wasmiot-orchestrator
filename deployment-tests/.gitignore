@@ -2,4 +2,6 @@ test?/orchestrator/files/**
 test?/device?/modules/**
 test?/device?/output/**
 test?/device-*/configs/modules.json
+test?/device-*/instance/configs/modules.json
 test?/device-*/configs/remote_functions.json
+test?/device-*/instance/configs/remote_functions.json
