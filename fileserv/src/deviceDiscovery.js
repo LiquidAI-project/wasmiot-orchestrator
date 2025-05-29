@@ -156,25 +156,19 @@ class DeviceManager {
         return device;
     }
 
-    /**
-     * Perform tasks for device introduction.
-     *
-     * Query device __for 'data'-events__ on its description path and if fails,
-     * remove from mDNS-cache.
-     * @param {*} device The device to introduce.
-     */
-    async #deviceIntroduction(device) {
-        const handleIntroductionErrorBound = (function handleIntroductionError(errorMsg) {
-                // Find and forget the service in question whose advertised
-                // host failed to answer to HTTP-GET.
+    async handleDeviceIntroduction(device, address) {
+        const reportIntroductionErrorBound = (function reportIntroductionError(errorMsg) {
                 console.log(" Error in device introduction: ", errorMsg);
-                this.#forgetDevice(device.name);
-            })
-            .bind(this);
+            });
 
-        // FIXME: Using first address but might want to try all available.
-        let url = new URL(`http://${device.communication.addresses[0]}:${device.communication.port}`);
-        url.pathname = device.deviceDescriptionPath || DEVICE_DESC_ROUTE;
+        let url = null;
+        try {
+            url = new URL(`http://${address}:${device.communication.port}`);
+            url.pathname = device.deviceDescriptionPath || DEVICE_DESC_ROUTE;
+        } catch (error) {
+            reportIntroductionErrorBound(`Invalid URL for device description: ${error}`);
+            return false;
+        }
 
         console.log("Querying device description via GET", url.toString());
 
@@ -182,14 +176,14 @@ class DeviceManager {
         try {
             res = await fetch(url);
             if (res.status !== 200) {
-                handleIntroductionErrorBound(
+                reportIntroductionErrorBound(
                     `${JSON.stringify(device.communication, null, 2)} responded ${res.status} ${res.statusText}`
                 );
-                return;
+                return false;
             }
         } catch (error) {
-            handleIntroductionErrorBound(`fetch error with url ${url}: ${error}`);
-            return;
+            reportIntroductionErrorBound(`fetch error with url ${url}: ${error}`);
+            return false;
         }
 
         let deviceDescription;
@@ -198,16 +192,39 @@ class DeviceManager {
             // WasmIoT TODO Perform validation.
             deviceDescription = await res.json();
         } catch (error) {
-            handleIntroductionErrorBound(`description JSON is malformed: ${error}`);
-            return;
+            reportIntroductionErrorBound(`description JSON is malformed: ${error}`);
+            return false;
         }
 
         this.deviceCollection.updateOne({ name: device.name }, { $set: { description: deviceDescription } });
 
-        console.log(`Added description for device '${device.name}'`);
+        return true;
+    }
 
-        // Do an initial health check on the new device.
-        this.healthCheck(device.name);
+    /**
+     * Perform tasks for device introduction.
+     *
+     * Query device __for 'data'-events__ on its description path and if fails,
+     * remove from mDNS-cache.
+     * @param {*} device The device to introduce.
+     */
+    async #deviceIntroduction(device) {
+        for (let address of device.communication.addresses) {
+            const deviceIntroductionSuccess = await this.handleDeviceIntroduction(
+                device,
+                address
+            );
+            if (deviceIntroductionSuccess) {
+                console.log(`Added description for device '${device.name}'`);
+
+                // Do an initial health check on the new device.
+                this.healthCheck(device.name);
+                return;
+            }
+        }
+        // If no address worked, then forget the device.
+        console.log(`No address worked for device '${device.name}', forgetting it.`);
+        this.#forgetDevice(device.name);
     }
 
     async registerOrchestratorUrl(device) {
@@ -317,27 +334,35 @@ class DeviceManager {
      * @throws If there were error querying the device.
      */
     async #healthCheckDevice(device) {
-        let url = new URL(`http://${device.communication.addresses[0]}:${device.communication.port}/${device.healthCheckPath || DEVICE_HEALTH_ROUTE.substring(1)}`);
-        try {
-            const public_ip = new URL(PUBLIC_BASE_URI).hostname;
-            let res = await fetch(url, {headers: {"X-Forwarded-For": public_ip}})
+        const healthCheckPath = device.healthCheckPath || DEVICE_HEALTH_ROUTE.substring(1);
+        const public_ip = new URL(PUBLIC_BASE_URI).hostname;
+        for (let address of device.communication.addresses) {
+            try {
+                let url = new URL(`http://${address}:${device.communication.port}/${healthCheckPath}`);
+                let res = await fetch(url, {headers: {"X-Forwarded-For": public_ip}})
 
-            if (res.status !== 200) {
-                throw `${url.toString()} responded ${res.status} ${res.statusText}`
-            }
-            else if (device.name !== "orchestrator") {
-                const orchestratorHeader = res.headers.get("Custom-Orchestrator-Set");
-                if (orchestratorHeader !== "true") {
-                    console.log("Orchestrator URL not set for device", device.name);
-                    this.registerOrchestratorUrl(device);
+                if (res.status !== 200) {
+                    console.log(`Health-check for device '${device.name}' using address '${address}' failed: ${res.status} ${res.statusText}`);
+                    continue;
                 }
-            }
+                else if (device.name !== "orchestrator") {
+                    const orchestratorHeader = res.headers.get("Custom-Orchestrator-Set");
+                    if (orchestratorHeader !== "true") {
+                        console.log("Orchestrator URL not set for device", device.name);
+                        this.registerOrchestratorUrl(device);
+                    }
+                }
 
-            return res.json();
+                return res.json();
+            }
+            catch (error) {
+                console.log(`Health-check failed for device '${device.name}' using address '${address}': ${error}`);
+                // TODO: Should invalid address be removed from device?
+            }
         }
-        catch (error) {
-            console.log(`Health-check failed for device '${device.name}': ${error}`);
-        }
+
+        // If all addresses failed, throw an error.
+        throw new Error(`Health-check failed for device '${device.name}' using all addresses: ${device.communication.addresses}`);
     }
 }
 
