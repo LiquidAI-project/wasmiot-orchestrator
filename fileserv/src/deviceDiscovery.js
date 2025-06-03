@@ -4,7 +4,7 @@
  */
 
 const bonjour = require("bonjour-service");
-const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, DEVICE_SCAN_DURATION_MS, DEVICE_SCAN_INTERVAL_MS, PUBLIC_BASE_URI } = require("../constants.js");
+const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, PUBLIC_BASE_URI } = require("../constants.js");
 
 const { ORCHESTRATOR_ADVERTISEMENT } = require("./orchestrator.js");
 
@@ -48,8 +48,6 @@ class DeviceManager {
         this.deviceCollection = database.collection("device");
         this.queryOptions = { type };
 
-        this.deviceScanDuration = DEVICE_SCAN_DURATION_MS;
-        this.deviceScanInterval = DEVICE_SCAN_INTERVAL_MS;
         this.deviceHealthCheckInterval = DEVICE_HEALTH_CHECK_INTERVAL_MS;
     }
 
@@ -65,11 +63,9 @@ class DeviceManager {
         this.orchestratorAdvertiser = new bonjour.Bonjour();
         this.orchestratorAdvertiser.publish(ORCHESTRATOR_ADVERTISEMENT);
 
+        // Continuously scan for devices
+        this.startScan();
 
-        // Continuously do new scans for devices in an interval.
-        let scanBound = this.startScan.bind(this);
-        scanBound(this.deviceScanDuration);
-        this.scannerId = setInterval(() => scanBound(this.deviceScanDuration), this.deviceScanInterval);
         // Check the status of the services every 2 minutes. (NOTE: This is
         // because the library used does not seem to support re-querying the
         // services on its own).
@@ -84,17 +80,10 @@ class DeviceManager {
     }
 
     /**
-     * Do a scan for devices for a duration of time.
-     * @param {*} duration The (maximum) amount of time to scan for devices in
-     * milliseconds.
+     * Start a continuous scan for devices.
      */
-    startScan(duration=10000) {
+    async startScan() {
         console.log("Scanning for devices", this.queryOptions, "...");
-
-        // Do not start again, if already scanning.
-        if (this.browser) {
-            return;
-        }
 
         // Save browser in order to end its life when required.
         this.browser = this.bonjourInstance.find(this.queryOptions);
@@ -104,17 +93,7 @@ class DeviceManager {
         this.browser.on("up", this.saveDevice.bind(this));
         this.browser.on("down", this.#forgetDevice.bind(this));
 
-        setTimeout(this.#stopScan.bind(this), duration);
-    }
-
-    /**
-     * Stop and reset scanning.
-     */
-    #stopScan() {
-        this.browser.stop();
-        this.browser = null;
-
-        console.log("Stopped scanning for devices.");
+        this.browser.start();
     }
 
     /**
@@ -144,6 +123,15 @@ class DeviceManager {
     async #addNewDevice(serviceData) {
         let device = await this.deviceCollection.findOne({ name: serviceData.name });
         if (!device) {
+            // Add the address from txt field to the address list if it is not already there.
+            // (The supervisors should set this field to correspond to the device's address.)
+            if (
+                serviceData.txt && serviceData.txt.address &&
+                !serviceData.addresses.includes(serviceData.txt.address)
+            ) {
+                serviceData.addresses.push(serviceData.txt.address);
+            }
+
             // Transform the service into usable device data.
             device = new Device(serviceData.name, serviceData.addresses, serviceData.port);
             this.deviceCollection.insertOne(device);
@@ -284,7 +272,15 @@ class DeviceManager {
             let health;
             try {
                 health = await x.check;
-                healthyCount++;
+                if (health) {
+                    healthyCount++;
+                }
+                else {
+                    console.log(
+                        `Forgetting device with health problems (device: ${x.device}, timestamp: ${x.timestamp.toISOString()})`);
+                    this.#forgetDevice(x.device);
+                    continue;
+                }
             } catch (e) {
                 console.log(
                     `Forgetting device with health problems (device: ${x.device}, timestamp: ${x.timestamp.toISOString()}):`, e.message
@@ -336,6 +332,8 @@ class DeviceManager {
     async #healthCheckDevice(device) {
         const healthCheckPath = device.healthCheckPath || DEVICE_HEALTH_ROUTE.substring(1);
         const public_ip = new URL(PUBLIC_BASE_URI).hostname;
+        let failedAddresses = [];
+
         for (let address of device.communication.addresses) {
             try {
                 let url = new URL(`http://${address}:${device.communication.port}/${healthCheckPath}`);
@@ -353,16 +351,26 @@ class DeviceManager {
                     }
                 }
 
+                if (failedAddresses.length > 0) {
+                    // Since we got a successful response, we can remove the failed addresses from the device.
+                    device.communication.addresses = device.communication.addresses.filter(
+                        addr => !failedAddresses.includes(addr)
+                    );
+                    this.deviceCollection.updateOne(
+                        { name: device.name },
+                        { $set: { communication: device.communication } }
+                    );
+                }
                 return res.json();
             }
             catch (error) {
                 console.log(`Health-check failed for device '${device.name}' using address '${address}': ${error}`);
-                // TODO: Should invalid address be removed from device?
+                failedAddresses.push(address);
             }
         }
 
-        // If all addresses failed, throw an error.
-        throw new Error(`Health-check failed for device '${device.name}' using all addresses: ${device.communication.addresses}`);
+        // If all addresses failed, return false
+        return false;
     }
 }
 
