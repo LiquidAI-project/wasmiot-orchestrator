@@ -33,14 +33,20 @@ services:
       database:
 
   mdns-reflector:
-    image: flungo/avahi:main
+    image: ghcr.io/liquidai-project/wasmiot-mdns-reflector
     container_name: wasmiot-mdns-reflector
+    build:
+      context: ./mdns-reflector
+      dockerfile: ./Dockerfile
     restart: unless-stopped
     environment:
       REFLECTOR_ENABLE_REFLECTOR: "yes"
+      SERVER_ENABLE_DBUS: "yes"
+      SERVER_USE_IPV6: "no"
+      PUBLISH_PUBLISH_WORKSTATION: "yes"
+      PUBLISH_PUBLISH_DOMAIN: "yes"
     networks:
       wasmiot-main:
-        ipv4_address: ${INTERNAL_MDNS_REFLECTOR_IP}
 
   orchestrator:
     image: ghcr.io/liquidai-project/wasmiot-orchestrator
@@ -85,18 +91,6 @@ services:
       - ./test1/orchestrator/nginx/templates/10-variables.conf:/etc/nginx/templates/10-variables.conf.template:ro
     networks:
       wasmiot-main:
-        ipv4_address: ${INTERNAL_NGINX_IP}
-
-  mdns-server:
-    image: ghcr.io/liquidai-project/wasmiot-mdns-server
-    container_name: wasmiot-mdns-server
-    restart: unless-stopped
-    build:
-      context: ./mdns-server
-      dockerfile: ./Dockerfile
-    networks:
-      wasmiot-main:
-        ipv4_address: ${INTERNAL_MDNS_SERVER_IP}
 
   supervisor-python:
     image: ghcr.io/liquidai-project/wasmiot-supervisor
@@ -114,7 +108,6 @@ services:
       FLASK_PORT: ${SUPERVISOR_PYTHON_DOCKER_PORT}
       FLASK_ENV: production
       FLASK_DEBUG: 0
-      # WASMIOT_ORCHESTRATOR_URL: ${WASMIOT_ORCHESTRATOR_URL}
       WASMIOT_LOGGING_ENDPOINT: ${WASMIOT_LOGGING_ENDPOINT}
       EXTERNAL_LOGGING_ENABLED: true
     volumes:
@@ -123,7 +116,6 @@ services:
       - ./test1/device-python-docker/output:/app/instance/output
     networks:
       wasmiot-main:
-        ipv4_address: ${INTERNAL_SUPERVISOR_PYTHON_IP}
     extra_hosts:
       - ${HOST_ADDRESS}:host-gateway
 
@@ -141,7 +133,6 @@ services:
     environment:
       SUPERVISOR_NAME: ${SUPERVISOR_RUST_DOCKER_NAME}
       WASMIOT_SUPERVISOR_PORT: ${SUPERVISOR_RUST_DOCKER_PORT}
-      # WASMIOT_ORCHESTRATOR_URL: ${WASMIOT_ORCHESTRATOR_URL}
       WASMIOT_LOGGING_ENDPOINT: ${WASMIOT_LOGGING_ENDPOINT}
       EXTERNAL_LOGGING_ENABLED: true
     volumes:
@@ -150,7 +141,60 @@ services:
       - ./test1/device-rust-docker/output:/app/instance/output
     networks:
       wasmiot-main:
-        ipv4_address: ${INTERNAL_SUPERVISOR_RUST_IP}
+    extra_hosts:
+      - ${HOST_ADDRESS}:host-gateway
+
+  supervisor-extra-python:
+    image: ghcr.io/liquidai-project/wasmiot-supervisor
+    container_name: wasmiot-supervisor-extra-python
+    restart: unless-stopped
+    depends_on:
+      - orchestrator
+    build:
+      context: ../wasmiot-supervisor
+      dockerfile: ./Dockerfile-production
+    ports:
+      - ${SUPERVISOR_PYTHON_EXTRA_PORT}:${SUPERVISOR_PYTHON_EXTRA_PORT}
+    environment:
+      FLASK_APP: ${SUPERVISOR_PYTHON_EXTRA_NAME}
+      FLASK_PORT: ${SUPERVISOR_PYTHON_EXTRA_PORT}
+      FLASK_ENV: production
+      FLASK_DEBUG: 0
+      WASMIOT_ORCHESTRATOR_URL: ${WASMIOT_ORCHESTRATOR_URL}
+      WASMIOT_LOGGING_ENDPOINT: ${WASMIOT_LOGGING_ENDPOINT}
+      EXTERNAL_LOGGING_ENABLED: true
+    volumes:
+      - ./test1/device-python-extra/configs:/app/instance/configs
+      - ./test1/device-python-extra/modules:/app/instance/modules
+      - ./test1/device-python-extra/output:/app/instance/output
+    networks:
+      wasmiot-main:
+    extra_hosts:
+      - ${HOST_ADDRESS}:host-gateway
+
+  supervisor-extra-rust:
+    image: ghcr.io/liquidai-project/supervisor-rust-port
+    container_name: wasmiot-supervisor-extra-rust
+    restart: unless-stopped
+    depends_on:
+      - orchestrator
+    build:
+      context: ../supervisor-rust-port
+      dockerfile: ./Dockerfile
+    ports:
+      - ${SUPERVISOR_RUST_EXTRA_PORT}:${SUPERVISOR_RUST_EXTRA_PORT}
+    environment:
+      SUPERVISOR_NAME: ${SUPERVISOR_RUST_EXTRA_NAME}
+      WASMIOT_SUPERVISOR_PORT: ${SUPERVISOR_RUST_EXTRA_PORT}
+      WASMIOT_ORCHESTRATOR_URL: ${WASMIOT_ORCHESTRATOR_URL}
+      WASMIOT_LOGGING_ENDPOINT: ${WASMIOT_LOGGING_ENDPOINT}
+      EXTERNAL_LOGGING_ENABLED: true
+    volumes:
+      - ./test1/device-rust-extra/configs:/app/instance/configs
+      - ./test1/device-rust-extra/modules:/app/instance/modules
+      - ./test1/device-rust-extra/output:/app/instance/output
+    networks:
+      wasmiot-main:
     extra_hosts:
       - ${HOST_ADDRESS}:host-gateway
 
