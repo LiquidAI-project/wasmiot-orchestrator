@@ -4,7 +4,7 @@
  */
 
 const bonjour = require("bonjour-service");
-const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, DEVICE_SCAN_DURATION_MS, DEVICE_SCAN_INTERVAL_MS } = require("../constants.js");
+const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, DEVICE_SCAN_DURATION_MS, DEVICE_SCAN_INTERVAL_MS, PUBLIC_BASE_URI } = require("../constants.js");
 
 const { ORCHESTRATOR_ADVERTISEMENT } = require("./orchestrator.js");
 
@@ -210,6 +210,26 @@ class DeviceManager {
         this.healthCheck(device.name);
     }
 
+    async registerOrchestratorUrl(device) {
+        // Register the public URL of the orchestrator to the discovered device.
+        // An error here is not considered fatal, so only output the result to console.
+        try {
+            let url = new URL(`http://${device.communication.addresses[0]}:${device.communication.port}`);
+            url.pathname = "register";
+            console.log("Registering orchestrator URL with device:", url.toString());
+            let registerResponse = await fetch(url, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ url: PUBLIC_BASE_URI.slice(0, -1) }),
+            })
+            if (registerResponse.status !== 200) {
+                console.log(`Error registering orchestrator URL with device: (${registerResponse.status}) ${registerResponse.statusText}`);
+            }
+        } catch (error) {
+            console.log(`Error registering orchestrator URL with device: ${error}`);
+        }
+    }
+
     /**
      * Stop and clean up the device discovery process and currently active
      * callbacks for device health.
@@ -299,10 +319,18 @@ class DeviceManager {
     async #healthCheckDevice(device) {
         let url = new URL(`http://${device.communication.addresses[0]}:${device.communication.port}/${device.healthCheckPath || DEVICE_HEALTH_ROUTE}`);
         try {
-            let res = await fetch(url);
+            const public_ip = new URL(PUBLIC_BASE_URI).hostname;
+            let res = await fetch(url, {headers: {"X-Forwarded-For": public_ip}})
 
             if (res.status !== 200) {
                 throw `${url.toString()} responded ${res.status} ${res.statusText}`
+            }
+            else if (device.name !== "orchestrator") {
+                const orchestratorHeader = res.headers.get("Custom-Orchestrator-Set");
+                if (orchestratorHeader !== "true") {
+                    console.log("Orchestrator URL not set for device", device.name);
+                    this.registerOrchestratorUrl(device);
+                }
             }
 
             return res.json();
