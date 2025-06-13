@@ -217,21 +217,31 @@ class DeviceManager {
 
     async registerOrchestratorUrl(device) {
         // Register the public URL of the orchestrator to the discovered device.
+        for (let address of device.communication.addresses) {
+            let check = await this.#registerOrchestratorUrlToDevice(device, address);
+            if (check) {
+                return;
+            }
+        }
+    }
+
+    async #registerOrchestratorUrlToDevice(device, address) {
+        // Register the public URL of the orchestrator to the discovered device.
         // An error here is not considered fatal, so only output the result to console.
         try {
-            let url = new URL(`http://${device.communication.addresses[0]}:${device.communication.port}`);
+            let url = new URL(`http://${address}:${device.communication.port}`);
             url.pathname = "register";
-            console.log("Registering orchestrator URL with device:", url.toString());
+            console.log(`Registering orchestrator URL with device (${device.name})`);
             let registerResponse = await fetch(url, {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({ url: PUBLIC_BASE_URI.slice(0, -1) }),
             })
             if (registerResponse.status !== 200) {
-                console.log(`Error registering orchestrator URL with device: (${registerResponse.status}) ${registerResponse.statusText}`);
+                console.log(`Error registering orchestrator URL (${device.name}): (${registerResponse.status}) ${registerResponse.statusText}`);
             }
         } catch (error) {
-            console.log(`Error registering orchestrator URL with device: ${error}`);
+            console.log(`Error registering orchestrator URL (${device.name}): ${error}`);
         }
     }
 
