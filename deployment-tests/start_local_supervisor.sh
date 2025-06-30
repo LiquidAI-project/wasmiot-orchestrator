@@ -14,10 +14,6 @@ then
     export INSTANCE_PATH="$(pwd)/test1/device-python-local"
     export WASMIOT_SUPERVISOR_NAME=${SUPERVISOR_PYTHON_LOCAL_NAME}
     export WASMIOT_SUPERVISOR_PORT=${SUPERVISOR_PYTHON_LOCAL_PORT}
-    # export FLASK_ENV=production
-    # export FLASK_DEBUG=0
-    # export WASMIOT_ORCHESTRATOR_URL=${WASMIOT_ORCHESTRATOR_URL}
-    # export WASMIOT_LOGGING_ENDPOINT=${WASMIOT_LOGGING_ENDPOINT}
     export EXTERNAL_LOGGING_ENABLED=true
 
     cd ../wasmiot-supervisor
@@ -27,8 +23,6 @@ else
     export INSTANCE_PATH="$(pwd)/test1/device-rust-local/instance"
     export WASMIOT_SUPERVISOR_NAME=${SUPERVISOR_RUST_LOCAL_NAME}
     export WASMIOT_SUPERVISOR_PORT=${SUPERVISOR_RUST_LOCAL_PORT}
-    # export WASMIOT_ORCHESTRATOR_URL=${WASMIOT_ORCHESTRATOR_URL}
-    # export WASMIOT_LOGGING_ENDPOINT=${WASMIOT_LOGGING_ENDPOINT}
     export EXTERNAL_LOGGING_ENABLED=true
 
     cd ../supervisor-rust-port

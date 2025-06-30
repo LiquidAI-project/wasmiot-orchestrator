@@ -19,34 +19,18 @@ services:
     depends_on:
       - mongo
     environment:
-      ME_CONFIG_MONGODB_SERVER: ${MONGO_HOST:-mongo}
-      ME_CONFIG_MONGODB_PORT: ${MONGO_PORT:-27017}
-      ME_CONFIG_MONGODB_ENABLE_ADMIN: ${MONGO_EXPRESS_ENABLE_ADMIN:-false}
+      ME_CONFIG_MONGODB_SERVER: ${MONGO_HOST}
+      ME_CONFIG_MONGODB_PORT: ${MONGO_PORT}
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: ${MONGO_EXPRESS_ENABLE_ADMIN}
       ME_CONFIG_MONGODB_AUTH_USERNAME: ${MONGO_ROOT_USERNAME}
       ME_CONFIG_MONGODB_AUTH_PASSWORD: ${MONGO_ROOT_PASSWORD}
-      ME_CONFIG_BASICAUTH: ${MONGO_EXPRESS_BASICAUTH:-false}
+      ME_CONFIG_BASICAUTH: ${MONGO_EXPRESS_BASICAUTH}
       ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME}
       ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
     ports:
       - ${MONGO_EXPRESS_PORT:-8081}:8081
     networks:
       database:
-
-  mdns-reflector:
-    image: ghcr.io/liquidai-project/wasmiot-mdns-reflector
-    container_name: wasmiot-mdns-reflector
-    build:
-      context: ./mdns-reflector
-      dockerfile: ./Dockerfile
-    restart: unless-stopped
-    environment:
-      REFLECTOR_ENABLE_REFLECTOR: "yes"
-      SERVER_ENABLE_DBUS: "yes"
-      SERVER_USE_IPV6: "no"
-      PUBLISH_PUBLISH_WORKSTATION: "yes"
-      PUBLISH_PUBLISH_DOMAIN: "yes"
-    networks:
-      wasmiot-main:
 
   orchestrator:
     image: ghcr.io/liquidai-project/wasmiot-orchestrator
@@ -59,10 +43,11 @@ services:
       dockerfile: ./Dockerfile-production
     networks:
       wasmiot-main:
-        ipv4_address: ${INTERNAL_ORCHESTRATOR_IP}
       database:
     extra_hosts:
       - ${HOST_ADDRESS}:host-gateway
+    ports:
+      - ${ORCHESTRATOR_PUBLIC_PORT}:${ORCHESTRATOR_PUBLIC_PORT}
     environment:
       MONGO_HOST: ${MONGO_HOST}
       MONGO_PORT: ${MONGO_PORT}
@@ -75,29 +60,17 @@ services:
       WASMIOT_USE_WEB_SOCKETS: ${WASMIOT_USE_WEB_SOCKETS:-true}
     volumes:
       - ./test1/orchestrator/init:/init
-      - ./test1/orchestrator/files:/app/fileserv/files
-
-  nginx-proxy:
-    image: nginx:1.27.5
-    container_name: wasmiot-nginx
-    restart: unless-stopped
-    ports:
-      - 0.0.0.0:80:80
-    environment:
-      ORCHESTRATOR_IP: ${INTERNAL_ORCHESTRATOR_IP}
-      ORCHESTRATOR_PORT: ${ORCHESTRATOR_PUBLIC_PORT}
-    volumes:
-      - ./test1/orchestrator/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./test1/orchestrator/nginx/templates/10-variables.conf:/etc/nginx/templates/10-variables.conf.template:ro
-    networks:
-      wasmiot-main:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ORCHESTRATOR_PUBLIC_PORT}/health"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 3
+      start_period: 30s
 
   supervisor-python:
     image: ghcr.io/liquidai-project/wasmiot-supervisor
     container_name: wasmiot-supervisor-python
     restart: unless-stopped
-    depends_on:
-      - orchestrator
     build:
       context: ../wasmiot-supervisor
       dockerfile: ./Dockerfile-production
@@ -106,14 +79,10 @@ services:
     environment:
       WASMIOT_SUPERVISOR_NAME: ${SUPERVISOR_PYTHON_DOCKER_NAME}
       WASMIOT_SUPERVISOR_PORT: ${SUPERVISOR_PYTHON_DOCKER_PORT}
-      # FLASK_ENV: production
-      # FLASK_DEBUG: 0
-      # WASMIOT_LOGGING_ENDPOINT: ${WASMIOT_LOGGING_ENDPOINT}
       EXTERNAL_LOGGING_ENABLED: true
+      WASMIOT_REGISTER_RENEWAL_TIME: 300
     volumes:
       - ./test1/device-python-docker/configs:/app/instance/configs
-      - ./test1/device-python-docker/modules:/app/instance/modules
-      - ./test1/device-python-docker/output:/app/instance/output
     networks:
       wasmiot-main:
     extra_hosts:
@@ -123,8 +92,6 @@ services:
     image: ghcr.io/liquidai-project/supervisor-rust-port
     container_name: wasmiot-supervisor-rust
     restart: unless-stopped
-    depends_on:
-      - orchestrator
     build:
       context: ../supervisor-rust-port
       dockerfile: ./Dockerfile
@@ -133,12 +100,10 @@ services:
     environment:
       SUPERVISOR_NAME: ${SUPERVISOR_RUST_DOCKER_NAME}
       WASMIOT_SUPERVISOR_PORT: ${SUPERVISOR_RUST_DOCKER_PORT}
-      # WASMIOT_LOGGING_ENDPOINT: ${WASMIOT_LOGGING_ENDPOINT}
       EXTERNAL_LOGGING_ENABLED: true
+      WASMIOT_REGISTER_RENEWAL_TIME: 300
     volumes:
       - ./test1/device-rust-docker/configs:/app/instance/configs
-      - ./test1/device-rust-docker/modules:/app/instance/modules
-      - ./test1/device-rust-docker/output:/app/instance/output
     networks:
       wasmiot-main:
     extra_hosts:
@@ -148,8 +113,6 @@ services:
     image: ghcr.io/liquidai-project/wasmiot-supervisor
     container_name: wasmiot-supervisor-extra-python
     restart: unless-stopped
-    depends_on:
-      - orchestrator
     build:
       context: ../wasmiot-supervisor
       dockerfile: ./Dockerfile-production
@@ -158,16 +121,9 @@ services:
     environment:
       WASMIOT_SUPERVISOR_NAME: ${SUPERVISOR_PYTHON_EXTRA_NAME}
       WASMIOT_SUPERVISOR_PORT: ${SUPERVISOR_PYTHON_EXTRA_PORT}
-      # FLASK_ENV: production
-      # FLASK_DEBUG: 0
-      # WASMIOT_ORCHESTRATOR_URL: ${WASMIOT_ORCHESTRATOR_URL}
-      # WASMIOT_LOGGING_ENDPOINT: ${WASMIOT_LOGGING_ENDPOINT}
       EXTERNAL_LOGGING_ENABLED: true
-      WASMIOT_REGISTRATION_RENEWAL: 90
     volumes:
       - ./test1/device-python-extra/configs:/app/instance/configs
-      - ./test1/device-python-extra/modules:/app/instance/modules
-      - ./test1/device-python-extra/output:/app/instance/output
     networks:
       wasmiot-main:
     extra_hosts:
@@ -177,8 +133,6 @@ services:
     image: ghcr.io/liquidai-project/supervisor-rust-port
     container_name: wasmiot-supervisor-extra-rust
     restart: unless-stopped
-    depends_on:
-      - orchestrator
     build:
       context: ../supervisor-rust-port
       dockerfile: ./Dockerfile
@@ -187,14 +141,9 @@ services:
     environment:
       WASMIOT_SUPERVISOR_NAME: ${SUPERVISOR_RUST_EXTRA_NAME}
       WASMIOT_SUPERVISOR_PORT: ${SUPERVISOR_RUST_EXTRA_PORT}
-      # WASMIOT_ORCHESTRATOR_URL: ${WASMIOT_ORCHESTRATOR_URL}
-      # WASMIOT_LOGGING_ENDPOINT: ${WASMIOT_LOGGING_ENDPOINT}
       EXTERNAL_LOGGING_ENABLED: true
-      WASMIOT_REGISTRATION_RENEWAL: 90
     volumes:
       - ./test1/device-rust-extra/configs:/app/instance/configs
-      - ./test1/device-rust-extra/modules:/app/instance/modules
-      - ./test1/device-rust-extra/output:/app/instance/output
     networks:
       wasmiot-main:
     extra_hosts:
@@ -209,10 +158,5 @@ volumes:
 networks:
   wasmiot-main:
     name: wasmiot-net-main
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 172.20.0.0/24
   database:
     name: wasmiot-database-net-test
