@@ -18,7 +18,12 @@ fi
 
 echo "Building dependencies for Python supervisor..."
 current_dir=$(pwd)
+target_arch=$(cat .env | grep ^DEVICE_ARCH | cut -d '=' -f 2)
 cd ../wasmiot-supervisor
+if [ "$device_arch" == "armv7-unknown-linux-gnueabihf" ]
+then
+    sed -i "s/# RPi.GPIO/RPi.GPIO/" requirements.txt
+fi
 python3 -m pip install -r requirements.txt
 cd ${current_dir}
 
