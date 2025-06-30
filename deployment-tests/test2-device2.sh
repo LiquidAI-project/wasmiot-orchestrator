@@ -4,6 +4,8 @@ set -e
 
 cp .env.template2-device2 .env
 
+source .env
+
 # stop screen sessions running local supervisors
 screen -X -S supervisor kill || true
 screen -X -S supervisor kill || true
@@ -14,13 +16,15 @@ then
     exit 0
 fi
 
-echo "Building local supervisors..."
+echo "Building dependencies for Python supervisor..."
 current_dir=$(pwd)
 cd ../wasmiot-supervisor
 python3 -m pip install -r requirements.txt
-cd ../supervisor-rust-port
-cargo build --release
 cd ${current_dir}
+
+echo "Copying precompiled Supervisor binary for Rust supervisor..."
+mkdir -p ../supervisor-rust-port/target/release
+scp ${PRECOMPILED_BIN_PATH} ../supervisor-rust-port/target/release/supervisor
 
 echo "Starting the local supervisors..."
 sleep 10

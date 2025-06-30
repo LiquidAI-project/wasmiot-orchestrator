@@ -3,11 +3,14 @@ services:
     image: mongo:6.0.23
     container_name: wasmiot-mongodb
     restart: unless-stopped
+    ports:
+      - ${MONGO_PORT}:${MONGO_PORT}
     networks:
       database:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    command: mongod --port ${MONGO_PORT}
     volumes:
       - mongo-config:/data/configdb
       - mongo-db:/data/db
@@ -32,65 +35,6 @@ services:
     networks:
       database:
 
-  mdns-reflector:
-    image: ghcr.io/liquidai-project/wasmiot-mdns-reflector
-    container_name: wasmiot-mdns-reflector
-    build:
-      context: ./mdns-reflector
-      dockerfile: ./Dockerfile
-    restart: unless-stopped
-    environment:
-      REFLECTOR_ENABLE_REFLECTOR: "yes"
-      SERVER_ENABLE_DBUS: "yes"
-      SERVER_USE_IPV6: "no"
-      PUBLISH_PUBLISH_WORKSTATION: "yes"
-      PUBLISH_PUBLISH_DOMAIN: "yes"
-    networks:
-      wasmiot-main:
-      physical:
-
-  nginx-proxy:
-    image: nginx:1.27.5
-    container_name: wasmiot-nginx
-    restart: unless-stopped
-    ports:
-      - 0.0.0.0:${PROXY_PORT}:${PROXY_PORT}
-    environment:
-      PROXY_PORT: ${PROXY_PORT}
-      ORCHESTRATOR_IP: ${INTERNAL_ORCHESTRATOR_IP}
-      ORCHESTRATOR_PORT: ${ORCHESTRATOR_PUBLIC_PORT}
-    volumes:
-      - ./test2/orchestrator/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./test2/orchestrator/nginx/templates/10-variables.conf:/etc/nginx/templates/10-variables.conf.template:ro
-    networks:
-      wasmiot-main:
-      physical:
-
-  orchestrator:
-    image: ghcr.io/liquidai-project/wasmiot-orchestrator
-    container_name: wasmiot-orchestrator
-    restart: unless-stopped
-    depends_on:
-      - mongo
-    build:
-      context: ../fileserv
-      dockerfile: ./Dockerfile-production
-    networks:
-      wasmiot-main:
-      database:
-    environment:
-      MONGO_HOST: ${MONGO_HOST}
-      MONGO_PORT: ${MONGO_PORT}
-      MONGO_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
-      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
-      PUBLIC_HOST: ${ORCHESTRATOR_PUBLIC_HOST}
-      PUBLIC_PORT: ${ORCHESTRATOR_PUBLIC_PORT}
-      WASMIOT_INIT_FOLDER: ${WASMIOT_INIT_FOLDER:-/init}
-      WASMIOT_CLEAR_LOGS: ${WASMIOT_CLEAR_LOGS:-true}
-      WASMIOT_USE_WEB_SOCKETS: ${WASMIOT_USE_WEB_SOCKETS:-true}
-    volumes:
-      - ./test2/orchestrator/init:/init
-
 volumes:
   mongo-config:
     name: wasmiot-mongo-config-test
@@ -98,15 +42,5 @@ volumes:
     name: wasmiot-mongo-db-test
 
 networks:
-  wasmiot-main:
-    name: wasmiot-net-main
   database:
     name: wasmiot-database-net
-  physical:
-    name: wasmiot-physical-net
-    driver: ${NETWORK_DRIVER}
-    driver_opts:
-      parent: ${NETWORK_INTERFACE}
-    ipam:
-      config:
-        - subnet: ${NETWORK_IP_SUBNETE}
