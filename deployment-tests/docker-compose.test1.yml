@@ -60,12 +60,6 @@ services:
       WASMIOT_USE_WEB_SOCKETS: ${WASMIOT_USE_WEB_SOCKETS:-true}
     volumes:
       - ./test1/orchestrator/init:/init
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${ORCHESTRATOR_PUBLIC_PORT}/health"]
-      interval: 1m30s
-      timeout: 30s
-      retries: 3
-      start_period: 30s
 
   supervisor-python:
     image: ghcr.io/liquidai-project/wasmiot-supervisor
