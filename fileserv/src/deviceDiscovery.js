@@ -4,12 +4,18 @@
  */
 
 const { fetchDeployments } = require("./../routes/deployment.js");
+const { switchToFailovers } = require("./../routes/deployment.js");
 
 const bonjour = require("bonjour-service");
 const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, PUBLIC_BASE_URI, DEVICE_HEALTHCHECK_THRESHOLD } = require("../constants.js");
 
 const { ORCHESTRATOR_ADVERTISEMENT } = require("./orchestrator.js");
-const failedHealthCheckCounts = {};
+
+let orchestrator = null;
+
+function setOrchestrator(orch) {
+    orchestrator = orch;
+}
 
 /**
  * Thing running the Wasm-IoT supervisor.
@@ -336,13 +342,21 @@ class DeviceManager {
             device["status"] = "inactive";
             device["statusLog"].unshift({ status: "inactive", time: date });
             console.log("Device", device.name, "is now inactive");
+            //Save to database before entering failover logic?
             
             //Checks if the device going to inactive state has been used in active deployments
             const deviceId = device._id.toString();
 
-            const inactiveDeviceDeployments = await fetchDeployments(deviceId);
+            const inactiveDeviceDeployments = await orchestrator.fetchDeployments(deviceId);
             console.log("Deployments for inactive device:");
             console.log(inactiveDeviceDeployments);
+            //TODO: Failover mechanism
+            //Save the wanted deployment in the database because the original needs to be edited..?
+            //Edit the devices from the matched devices id to the failover devices...
+            orchestrator.switchToFailovers(inactiveDeviceDeployments, deviceId);
+            //Deploy again to the devices/send the edited information
+            //Test?
+            //+ how to return to the original deployment?
         }
 
         await this.updateDevice(device, deviceCollection);
@@ -464,4 +478,5 @@ module.exports = {
     DeviceDiscovery: DeviceManager,
     MockDeviceDiscovery,
     Device,
+    setOrchestrator
 };

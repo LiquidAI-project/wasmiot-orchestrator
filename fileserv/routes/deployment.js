@@ -60,30 +60,6 @@ const getDeployments = async (request, response) => {
 }
 
 /**
- * Fetch all deployments from database that are active and include the deviceId.
- * @param {*} deviceId 
- * @returns list of deployments that are active and include the deviceId.
- */
-const fetchDeployments = async (deviceId) => {
-    const deployments = await (await deploymentCollection.find()).toArray();
-    const deviceDeployments = [];
-
-    for (const deployment of deployments) {
-        if (!deployment.active || !Array.isArray(deployment.sequence)) continue;
-
-        const includesDevice = deployment.sequence.some(step =>
-            step.device && step.device.equals(deviceId)
-        );
-
-        if (includesDevice) {
-            deviceDeployments.push(deployment);
-        }
-    }
-
-    return deviceDeployments;
-}
-
-/**
  * POST a deployment manifest to solve save and enact immediately. For now this
  * replaces an existing deployment with the same name (which isn't really
  * aligned with a ReStFuL PoSt...).
@@ -230,13 +206,46 @@ const updateDeployment = async (request, response) => {
     }
 };
 
+const updateFailovers = async (request, response) => {
+    // This is a special endpoint for Stellatest that updates the failover
+    // instructions for the given deployment.
+    console.log("meni deployment.js updateFailovers");
+    let deploymentId = request.params.deploymentId;
+    let deployment = request.body.deployment;
+
+    //TODO: ota talteen onko deployment active vai ei -> jos on niin tryDeploy
+    const isActive = deployment.active;
+
+    try {
+        deployment = await orchestrator.solve(deployment, true);
+    } catch (err) {
+        errorMsg = "Failed updating manifest for deployment" + deploymentId + err;
+
+        console.error(errorMsg, err.stack);
+
+        response
+            .status(500)
+            .json(new utils.Error(errorMsg));
+    }
+
+    if (isActive) {
+        console.log("meni isActiveen deployment.js");
+        tryDeploy(deployment, response);
+    } else {
+        console.log("meni elseen deployment.js");
+        response.status(204).send();
+    }
+
+}
+
 const router = express.Router();
 router.get("/:deploymentId", getDeployment);
 router.get("/", getDeployments);
 router.post("/", createDeployment);
 router.post("/:deploymentId", deploy);
+router.put("/stellatest/:deploymentId", updateFailovers);
 router.put("/:deploymentId", updateDeployment);
 router.delete("/", deleteDeployments);
 
 
-module.exports = { setDatabase, setOrchestrator, router, fetchDeployments };
+module.exports = { setDatabase, setOrchestrator, router };
