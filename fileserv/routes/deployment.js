@@ -207,13 +207,11 @@ const updateDeployment = async (request, response) => {
 };
 
 const updateFailovers = async (request, response) => {
-    // This is a special endpoint for Stellatest that updates the failover
-    // instructions for the given deployment.
-    console.log("meni deployment.js updateFailovers");
+    // This is a special endpoint for Stellatest that updates the failovers for the given deployment.
     let deploymentId = request.params.deploymentId;
     let deployment = request.body.deployment;
 
-    //TODO: ota talteen onko deployment active vai ei -> jos on niin tryDeploy
+    //ota talteen onko deployment active vai ei -> jos on niin tryDeploy
     const isActive = deployment.active;
 
     try {
@@ -229,13 +227,10 @@ const updateFailovers = async (request, response) => {
     }
 
     if (isActive) {
-        console.log("meni isActiveen deployment.js");
         tryDeploy(deployment, response);
     } else {
-        console.log("meni elseen deployment.js");
         response.status(204).send();
     }
-
 }
 
 const router = express.Router();

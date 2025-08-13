@@ -167,7 +167,7 @@ class Orchestrator {
         const deploymentIds = [];
 
         for (const deployment of deployments) {
-            if (!deployment.active || !Array.isArray(deployment.sequence)) continue;
+            //if (!deployment.active || !Array.isArray(deployment.sequence)) continue;
 
             const includesDevice = deployment.sequence.some(step =>
                 step.device && step.device.equals(deviceId)
@@ -219,14 +219,13 @@ class Orchestrator {
                 } 
             }
             if (modified) {
-                //Siirrä databaseen tallennus deployment.js?
-                //Laita tilalle api-kutsu
+                //Should saving this to the database happen in deployment.js file instead?
                 await this.deploymentCollection.updateOne(
                     { _id: ObjectId(deploymentId) },
                     { $set: { sequence: deployment.sequence } }
                 );
                 console.log(`Deployment ${deploymentId} updated with new failover device(s).`);
-                //TODO: send information to the devices about changed deployment!
+                //TODO: Send information to the devices about the changed deployment!
                 console.log(this.packageManagerBaseUrl);
                 const endpointUrl = `${this.packageManagerBaseUrl}file/manifest/stellatest/${deploymentId}`;
                 console.log(endpointUrl);
@@ -238,26 +237,8 @@ class Orchestrator {
                     console.error(`Error updating deployment ${deploymentId}:`, error);
                 }
             }
-
-            
-            /**await fetch(endpointUrl, {
-                method: 'PUT',
-                headers: {"Content-Type": "application/json"},
-                body:  JSON.stringify({deployment})
-            }).then(response => {
-                const status = response.status;
-                if (status === 204) {
-                    console.log(`Deployment ${deploymentId} updated successfully.`);
-                } else {
-                    console.error(`Failed to update deployment ${deploymentId}: HTTP ${status}`);
-                }
-            }).catch(error => {
-                console.error(`Error updating deployment ${deploymentId}:`, error);
-            });
-            */
         }
 
-        console.log("täällä");
         return;
     }
 
@@ -360,9 +341,17 @@ class Orchestrator {
                 throw new DeviceNotFound("", deviceId);
             }
 
+            //TODO: luo oma error sille jos device on inactive?
+            if (device.status !== "active") {
+                throw new DeviceNotFound("", deviceId);
+            }
+
             // Start the deployment requests on each device.
             requests.push([deviceId, this.messageDevice(device, "/deploy", manifest)]);
         }
+
+        console.log("Tässä requestit:");
+        console.log(requests);
 
         // Return devices mapped to their awaited deployment responses.
         let deploymentResponse = Object.fromEntries(await Promise.all(
