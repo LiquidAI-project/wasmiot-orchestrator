@@ -1,0 +1,156 @@
+services:
+  mongo:
+    image: mongo:6.0.23
+    container_name: wasmiot-mongodb
+    restart: unless-stopped
+    networks:
+      database:
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    volumes:
+      - mongo-config:/data/configdb
+      - mongo-db:/data/db
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: wasmiot-mongo-express
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      ME_CONFIG_MONGODB_SERVER: ${MONGO_HOST}
+      ME_CONFIG_MONGODB_PORT: ${MONGO_PORT}
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: ${MONGO_EXPRESS_ENABLE_ADMIN}
+      ME_CONFIG_MONGODB_AUTH_USERNAME: ${MONGO_ROOT_USERNAME}
+      ME_CONFIG_MONGODB_AUTH_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      ME_CONFIG_BASICAUTH: ${MONGO_EXPRESS_BASICAUTH}
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
+    ports:
+      - ${MONGO_EXPRESS_PORT:-8081}:8081
+    networks:
+      database:
+
+  orchestrator:
+    image: ghcr.io/liquidai-project/wasmiot-orchestrator
+    container_name: wasmiot-orchestrator
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    build:
+      context: ../fileserv
+      dockerfile: ./Dockerfile-production
+    networks:
+      wasmiot-main:
+      database:
+    extra_hosts:
+      - ${HOST_ADDRESS}:host-gateway
+    ports:
+      - ${ORCHESTRATOR_PUBLIC_PORT}:${ORCHESTRATOR_PUBLIC_PORT}
+    environment:
+      MONGO_HOST: ${MONGO_HOST}
+      MONGO_PORT: ${MONGO_PORT}
+      MONGO_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      PUBLIC_HOST: ${ORCHESTRATOR_PUBLIC_HOST}
+      PUBLIC_PORT: ${ORCHESTRATOR_PUBLIC_PORT}
+      WASMIOT_INIT_FOLDER: ${WASMIOT_INIT_FOLDER:-/init}
+      WASMIOT_CLEAR_LOGS: ${WASMIOT_CLEAR_LOGS:-true}
+      WASMIOT_USE_WEB_SOCKETS: ${WASMIOT_USE_WEB_SOCKETS:-true}
+    volumes:
+      - ./test1/orchestrator/init:/init
+
+  supervisor-python:
+    image: ghcr.io/liquidai-project/wasmiot-supervisor
+    container_name: wasmiot-supervisor-python
+    restart: unless-stopped
+    build:
+      context: ../wasmiot-supervisor
+      dockerfile: ./Dockerfile-production
+    ports:
+      - ${SUPERVISOR_PYTHON_DOCKER_PORT}:${SUPERVISOR_PYTHON_DOCKER_PORT}
+    environment:
+      WASMIOT_SUPERVISOR_NAME: ${SUPERVISOR_PYTHON_DOCKER_NAME}
+      WASMIOT_SUPERVISOR_PORT: ${SUPERVISOR_PYTHON_DOCKER_PORT}
+      EXTERNAL_LOGGING_ENABLED: true
+      WASMIOT_REGISTER_RENEWAL_TIME: 300
+    volumes:
+      - ./test1/device-python-docker/configs:/app/instance/configs
+    networks:
+      wasmiot-main:
+    extra_hosts:
+      - ${HOST_ADDRESS}:host-gateway
+
+  supervisor-rust:
+    image: ghcr.io/liquidai-project/supervisor-rust-port
+    container_name: wasmiot-supervisor-rust
+    restart: unless-stopped
+    build:
+      context: ../supervisor-rust-port
+      dockerfile: ./Dockerfile
+    ports:
+      - ${SUPERVISOR_RUST_DOCKER_PORT}:${SUPERVISOR_RUST_DOCKER_PORT}
+    environment:
+      SUPERVISOR_NAME: ${SUPERVISOR_RUST_DOCKER_NAME}
+      WASMIOT_SUPERVISOR_PORT: ${SUPERVISOR_RUST_DOCKER_PORT}
+      EXTERNAL_LOGGING_ENABLED: true
+      WASMIOT_REGISTER_RENEWAL_TIME: 300
+    volumes:
+      - ./test1/device-rust-docker/configs:/app/instance/configs
+    networks:
+      wasmiot-main:
+    extra_hosts:
+      - ${HOST_ADDRESS}:host-gateway
+
+  supervisor-extra-python:
+    image: ghcr.io/liquidai-project/wasmiot-supervisor
+    container_name: wasmiot-supervisor-extra-python
+    restart: unless-stopped
+    build:
+      context: ../wasmiot-supervisor
+      dockerfile: ./Dockerfile-production
+    ports:
+      - ${SUPERVISOR_PYTHON_EXTRA_PORT}:${SUPERVISOR_PYTHON_EXTRA_PORT}
+    environment:
+      WASMIOT_SUPERVISOR_NAME: ${SUPERVISOR_PYTHON_EXTRA_NAME}
+      WASMIOT_SUPERVISOR_PORT: ${SUPERVISOR_PYTHON_EXTRA_PORT}
+      EXTERNAL_LOGGING_ENABLED: true
+    volumes:
+      - ./test1/device-python-extra/configs:/app/instance/configs
+    networks:
+      wasmiot-main:
+    extra_hosts:
+      - ${HOST_ADDRESS}:host-gateway
+
+  supervisor-extra-rust:
+    image: ghcr.io/liquidai-project/supervisor-rust-port
+    container_name: wasmiot-supervisor-extra-rust
+    restart: unless-stopped
+    build:
+      context: ../supervisor-rust-port
+      dockerfile: ./Dockerfile
+    ports:
+      - ${SUPERVISOR_RUST_EXTRA_PORT}:${SUPERVISOR_RUST_EXTRA_PORT}
+    environment:
+      WASMIOT_SUPERVISOR_NAME: ${SUPERVISOR_RUST_EXTRA_NAME}
+      WASMIOT_SUPERVISOR_PORT: ${SUPERVISOR_RUST_EXTRA_PORT}
+      EXTERNAL_LOGGING_ENABLED: true
+    volumes:
+      - ./test1/device-rust-extra/configs:/app/instance/configs
+    networks:
+      wasmiot-main:
+    extra_hosts:
+      - ${HOST_ADDRESS}:host-gateway
+
+volumes:
+  mongo-config:
+    name: wasmiot-mongo-config-test
+  mongo-db:
+    name: wasmiot-mongo-db-test
+
+networks:
+  wasmiot-main:
+    name: wasmiot-net-main
+  database:
+    name: wasmiot-database-net-test

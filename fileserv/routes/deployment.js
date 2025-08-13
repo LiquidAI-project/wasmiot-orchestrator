@@ -38,7 +38,7 @@ const validateManifest = (mani) => {
 const getDeployment = async (request, response) => {
     // FIXME Crashes on bad _format_ of id (needs 12 byte or 24 hex).
     let doc = await deploymentCollection.findOne(
-        { _id: ObjectId(request.params.deploymentId) }
+        { _id: new ObjectId(request.params.deploymentId) }
     );
 
     if (doc) {
@@ -103,7 +103,7 @@ const tryDeploy = async (deploymentDoc, response) => {
 
         // Update the deployment to "active" status.
         await deploymentCollection.updateOne(
-            { _id: ObjectId(deploymentDoc._id) },
+            { _id: new ObjectId(deploymentDoc._id.toString()) },
             { $set: { active: true } }
         );
 
@@ -139,7 +139,7 @@ const tryDeploy = async (deploymentDoc, response) => {
 const deploy = async (request, response) => {
     let filter = {};
     try {
-        filter._id = ObjectId(request.params.deploymentId);
+        filter._id = new ObjectId(request.params.deploymentId);
     } catch (e) {
         console.error(`Passed in deployment-ID '${request.params.deploymentId}' not compatible as ObjectID. Using it as 'name' instead`);
         filter.name = request.params.deploymentId;
@@ -174,7 +174,7 @@ const deleteDeployments = async (request, response) => {
  */
 const updateDeployment = async (request, response) => {
     let oldDeployment = await deploymentCollection
-        .findOne({ _id: ObjectId(request.params.deploymentId) });
+        .findOne({ _id: new ObjectId(request.params.deploymentId) });
 
     if (!oldDeployment) {
         response

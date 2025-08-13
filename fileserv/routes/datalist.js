@@ -38,7 +38,7 @@ const getData = async (request, response) => {
 
     let history;
     try {
-        let { history: theHistory } = await collection.findOne({ _id: ObjectId(id) });
+        let { history: theHistory } = await collection.findOne({ _id: new ObjectId(id.toString()) });
         history = theHistory;
     } catch (error) {
         console.log("Error reading data from database: ", error);
@@ -74,7 +74,7 @@ const pushData = async (request, response) => {
             encoding="utf-8"
         )
         : request.query.param0;
-    await collection.updateOne({ _id: ObjectId(id) }, { $push: { history: entry } });
+    await collection.updateOne({ _id: new ObjectId(id.toString()) }, { $push: { history: entry } });
 
     // TODO: Notify subscribers about the new entry.
 

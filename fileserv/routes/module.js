@@ -50,7 +50,7 @@ class DataFileUpload {
 const moduleFilter = (x) => {
     let filter = {};
     try {
-        filter._id = ObjectId(x);
+        filter._id = new ObjectId(x.toString());
     } catch (e) {
         console.error(`Passed in module-ID '${x}' not compatible as ObjectID. Using it as 'name' instead`);
         filter.name = x;
@@ -532,6 +532,7 @@ async function notifyModuleFileUpdate(moduleId) {
 async function updateModule(id, fields) {
     let { matchedCount } = await moduleCollection.updateMany(moduleFilter(id), { $set: fields }, { upsert: true });
     if (matchedCount === 0) {
+        // TODO: should not throw without a try-catch block from async function
         throw "no module matched the filter";
     }
 }
@@ -559,10 +560,11 @@ router.post(
     fileUpload,
     describeModule,
 );
-router.get("/:moduleId?", getModule(false));
+router.get("/", getModule(false));
+router.get("/:moduleId", getModule(false));
 router.get("/:moduleId/description", getModule(true));
 router.get("/:moduleId/:filename", getModuleFile);
-router.delete("/:moduleId?", /*authenticationMiddleware,*/ deleteModule);
+router.delete("/:moduleId", /*authenticationMiddleware,*/ deleteModule);
 
 module.exports = {
     setDatabase,

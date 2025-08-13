@@ -1,0 +1,46 @@
+services:
+  mongo:
+    image: mongo:6.0.23
+    container_name: wasmiot-mongodb
+    restart: unless-stopped
+    ports:
+      - ${MONGO_PORT}:${MONGO_PORT}
+    networks:
+      database:
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    command: mongod --port ${MONGO_PORT}
+    volumes:
+      - mongo-config:/data/configdb
+      - mongo-db:/data/db
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: wasmiot-mongo-express
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      ME_CONFIG_MONGODB_SERVER: ${MONGO_HOST}
+      ME_CONFIG_MONGODB_PORT: ${MONGO_PORT}
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: ${MONGO_EXPRESS_ENABLE_ADMIN}
+      ME_CONFIG_MONGODB_AUTH_USERNAME: ${MONGO_ROOT_USERNAME}
+      ME_CONFIG_MONGODB_AUTH_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      ME_CONFIG_BASICAUTH: ${MONGO_EXPRESS_BASICAUTH}
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
+    ports:
+      - ${MONGO_EXPRESS_PORT:-8081}:8081
+    networks:
+      database:
+
+volumes:
+  mongo-config:
+    name: wasmiot-mongo-config-test
+  mongo-db:
+    name: wasmiot-mongo-db-test
+
+networks:
+  database:
+    name: wasmiot-database-net

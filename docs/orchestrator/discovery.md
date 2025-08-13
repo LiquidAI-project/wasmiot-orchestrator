@@ -1,4 +1,7 @@
 # Supervisor discovery
+
+## Discovery process description
+
 You could say that the [supervisor](https://github.com/LiquidAI-project/wasmiot-supervisor) has similar jobs to [the node components in Kubernetes](https://kubernetes.io/docs/concepts/overview/components/#node-components).
 An instance of it is run on each device or "node" and is responsible for setting up an isolated environment and HTTP-endpoints for running WebAssembly functions.
 
@@ -24,7 +27,7 @@ sequenceDiagram
     activate SM
     activate D
     activate T
-    loop Once at orchestrator start and then every minute
+    loop
         T->>D: Start scanning for `webthing`s
         D->>+M: Start scanning for `webthing`s
         SM->>M: Hey I'm available and here's my IP address and port
@@ -47,10 +50,15 @@ sequenceDiagram
     deactivate S
 ```
 
-This scanning and discovery process is [run every minute](https://github.com/LiquidAI-project/wasmiot-orchestrator/blob/main/fileserv/src/deviceDiscovery.js#L69), when the mDNS scanning is restarted on
-a timer or when explicitly requested by a user on orchestrator API's path `/discovery/reset`.
+This scanning and [discovery process]((https://github.com/LiquidAI-project/wasmiot-orchestrator/blob/main/fileserv/src/deviceDiscovery.js#L69)) is running all the time in the background.
 A [device is forgotten](https://github.com/LiquidAI-project/wasmiot-orchestrator/blob/main/fileserv/src/deviceDiscovery.js#L270) and wiped from database in a couple cases:
 - Device fails to properly respond to description query at discovery
 - Device emits a goodbye that mDNS browser recognizes
 - Device fails to respond to health queries that run every minute or so
 - `DELETE` is requested on orchestrator API's path `/file/device`, which wipes __all devices__
+
+## Discovery process update notes
+
+- The discovery process is now running constantly (as per pull request [https://github.com/LiquidAI-project/wasmiot-orchestrator/pull/83](https://github.com/LiquidAI-project/wasmiot-orchestrator/pull/83)). The previous discovery process was running only once at the start of the application and then in 1-minute intervals.
+- For cases where the supervisor is not running on the same network as the orchestrator, the supervisor can be set with `WASMIOT_ORCHESTRATOR_URL` environment variable. If it is set, the supervisor will register itself directly to the orchestrator using a `POST` request to orchestrator's API path `/discovery/register`.
+- Pull requests [https://github.com/LiquidAI-project/wasmiot-orchestrator/pull/83](https://github.com/LiquidAI-project/wasmiot-orchestrator/pull/83) and [https://github.com/LiquidAI-project/supervisor-rust-port/pull/9](https://github.com/LiquidAI-project/supervisor-rust-port/pull/9) contain information on additions aimed to provide more robustness to the discovery process. The implemented process is described in diagram format: [draw.io](../supervisor/device-discovery.drawio) or [PNG](../supervisor/device-discovery.png).

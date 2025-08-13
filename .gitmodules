@@ -1,3 +1,8 @@
 [submodule "wasmiot-supervisor"]
-	path = wasmiot-supervisor
-	url = git@github.com:LiquidAI-project/wasmiot-supervisor.git
+    path = wasmiot-supervisor
+    url = git@github.com:LiquidAI-project/wasmiot-supervisor.git
+    branch = main
+[submodule "supervisor-rust-port"]
+    path = supervisor-rust-port
+    url = git@github.com:LiquidAI-project/supervisor-rust-port.git
+    branch = main

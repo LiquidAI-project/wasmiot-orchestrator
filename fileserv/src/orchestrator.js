@@ -136,7 +136,8 @@ class Orchestrator {
         this.moduleCollection = this.database.collection("module");
         this.deploymentCollection = this.database.collection("deployment");
 
-        this.packageManagerBaseUrl = options.packageManagerBaseUrl || constants.PUBLIC_BASE_URI;
+        // Use the internal base URI for devices to pull modules from.
+        this.packageManagerBaseUrl = constants.INTERNAL_BASE_URI;
         if (!options.deviceMessagingFunction) {
             throw new utils.Error("method for communicating to devices not given");
         }
@@ -155,7 +156,7 @@ class Orchestrator {
             // Find with id or name to support finding core modules more easily.
             let filter = {};
             try {
-                filter._id = ObjectId(step.module)
+                filter._id = new ObjectId(step.module)
             } catch (e) {
                 console.error(`Passed in module-ID '${step.module}' not compatible as ObjectID. Using it as 'name' instead`);
                 filter.name = step.module;
@@ -195,14 +196,14 @@ class Orchestrator {
 
             // Attach the validation error as a note to the deployment.
             await this.deploymentCollection.updateOne(
-                { _id: ObjectId(deploymentId) },
+                { _id: new ObjectId(deploymentId) },
                 { $set: { validationError } }
             );
         }
 
         // Update the deployment with the created solution.
         this.deploymentCollection.updateOne(
-            { _id: ObjectId(deploymentId) },
+            { _id: new ObjectId(deploymentId) },
             { $set: solution }
         );
 
@@ -215,7 +216,7 @@ class Orchestrator {
 
         let requests = [];
         for (let [deviceId, manifest] of Object.entries(deploymentSolution)) {
-            let device = await this.deviceCollection.findOne({ _id: ObjectId(deviceId) });
+            let device = await this.deviceCollection.findOne({ _id: new ObjectId(deviceId) });
 
             if (!device) {
                 throw new DeviceNotFound("", deviceId);
@@ -560,7 +561,7 @@ async function validateDeploymentSolution(deploymentId, solution, database) {
 //        } else {
 //            stepLog.reasons.push("Node is safe for modules")
 //        }
-//        
+//
 //        // Check if input can be on the node
 //        if (datasourcecard) {
 //            if (datasourcecard["risk-level"] == "high" && nodecard["zone"] == "unsafe") {
@@ -994,7 +995,7 @@ function moduleData(modulee, packageBaseUrl) {
 const ORCHESTRATOR_ADVERTISEMENT = {
     name: "orchestrator",
     type: constants.DEVICE_TYPE,
-    port: 3000,
+    port: constants.PUBLIC_PORT,
 };
 
 const ORCHESTRATOR_WASMIOT_DEVICE_DESCRIPTION = {

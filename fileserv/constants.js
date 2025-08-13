@@ -15,9 +15,13 @@ const MONGO_URI = `mongodb://${MONGO_USER}:${MONGO_PASS}@${MONGO_HOST}:${MONGO_P
 
 const SENTRY_DSN = process.env.SENTRY_DSN;
 
-const PUBLIC_HOST = process.env.PUBLIC_HOST || `http://${require("os").hostname()}`;
+const INTERNAL_HOST = `http://${require("os").hostname()}`;
+const PUBLIC_HOST = process.env.PUBLIC_HOST || INTERNAL_HOST;
 const PUBLIC_PORT = process.env.PUBLIC_PORT || "3000";
 const PUBLIC_BASE_URI = `${PUBLIC_HOST}:${PUBLIC_PORT}/`;
+const INTERNAL_BASE_URI = process.env.USE_INTERNAL_HOST === "true" ? `${INTERNAL_HOST}:${PUBLIC_PORT}/` : PUBLIC_BASE_URI;
+
+const USE_WEBSOCKET = process.env.WASMIOT_USE_WEB_SOCKETS === "true";
 
 const INIT_FOLDER = process.env.WASMIOT_INIT_FOLDER || "/init";
 const CLEAR_LOGS = process.env.WASMIOT_CLEAR_LOGS === "true";
@@ -60,6 +64,8 @@ module.exports = {
     SENTRY_DSN,
     PUBLIC_PORT,
     PUBLIC_BASE_URI,
+    INTERNAL_BASE_URI,
+    USE_WEBSOCKET,
     MODULE_DIR,
     DEVICE_DESC_ROUTE,
     DEVICE_HEALTH_ROUTE,

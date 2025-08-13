@@ -4,7 +4,7 @@
 
 const { chdir } = require('process');
 
-const { MongoClient, ObjectId } = require("mongodb");
+const { MongoClient } = require("mongodb");
 
 const { MONGO_URI, PUBLIC_PORT, PUBLIC_BASE_URI, DEVICE_TYPE } = require("./constants.js");
 const { init: initApp } = require("./src/app");
@@ -13,6 +13,10 @@ const { Orchestrator } = require("./src/orchestrator");
 const utils = require("./utils.js");
 const { initializeCoreServices } = require("./routes/coreServices");
 const { addInitialData } = require("./src/initializer.js");
+
+const WebSocket = require('ws');
+const { setWebSocketServer } = require('./routes/logs');
+const constants = require('./constants.js');
 
 /**
  * The Express app.
@@ -28,6 +32,7 @@ let server;
  * For operations on the database connection and its collections.
  */
 let database;
+let databaseClient;
 
 /**
  * Thing to use for searching and listing services found (by mDNS).
@@ -101,12 +106,12 @@ main()
 * @throws If the connection fails (timeouts).
 */
 async function initializeDatabase() {
-    let client = new MongoClient(MONGO_URI);
-    console.log("Connecting to database client: ", client);
+    databaseClient = new MongoClient(MONGO_URI);
+    console.log("Connecting to database client: ", databaseClient);
 
     try {
-        await client.connect();
-        database = client.db();
+        await databaseClient.connect();
+        database = databaseClient.db();
         console.log("Database connection success!");
     } catch(e) {
         console.error("Database connection fail.");
@@ -143,6 +148,18 @@ function initServer() {
         );
         // Now that the server is up, initialize the core services.
         initializeCoreServices();
+
+        if (constants.USE_WEBSOCKET) {
+            // Initialize WebSocket server
+            const wss = new WebSocket.Server({ server });
+            setWebSocketServer(wss);
+
+            wss.on('connection', () => {
+                console.log('New WebSocket connection');
+            });
+
+            console.log("WebSocket server initialized");
+        };
     });
 
     server.on("error", (e) => {
@@ -173,7 +190,7 @@ async function shutDown() {
     }
 
     if (database) {
-        await database.close();
+        await databaseClient.close();
         console.log("Closed database connection.");
     }
 

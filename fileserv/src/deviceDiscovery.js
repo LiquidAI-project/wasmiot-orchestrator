@@ -4,7 +4,7 @@
  */
 
 const bonjour = require("bonjour-service");
-const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, DEVICE_SCAN_DURATION_MS, DEVICE_SCAN_INTERVAL_MS } = require("../constants.js");
+const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, PUBLIC_BASE_URI } = require("../constants.js");
 
 const { ORCHESTRATOR_ADVERTISEMENT } = require("./orchestrator.js");
 
@@ -48,8 +48,6 @@ class DeviceManager {
         this.deviceCollection = database.collection("device");
         this.queryOptions = { type };
 
-        this.deviceScanDuration = DEVICE_SCAN_DURATION_MS;
-        this.deviceScanInterval = DEVICE_SCAN_INTERVAL_MS;
         this.deviceHealthCheckInterval = DEVICE_HEALTH_CHECK_INTERVAL_MS;
     }
 
@@ -65,11 +63,9 @@ class DeviceManager {
         this.orchestratorAdvertiser = new bonjour.Bonjour();
         this.orchestratorAdvertiser.publish(ORCHESTRATOR_ADVERTISEMENT);
 
+        // Continuously scan for devices
+        this.startScan();
 
-        // Continuously do new scans for devices in an interval.
-        let scanBound = this.startScan.bind(this);
-        scanBound(this.deviceScanDuration);
-        this.scannerId = setInterval(() => scanBound(this.deviceScanDuration), this.deviceScanInterval);
         // Check the status of the services every 2 minutes. (NOTE: This is
         // because the library used does not seem to support re-querying the
         // services on its own).
@@ -84,17 +80,10 @@ class DeviceManager {
     }
 
     /**
-     * Do a scan for devices for a duration of time.
-     * @param {*} duration The (maximum) amount of time to scan for devices in
-     * milliseconds.
+     * Start a continuous scan for devices.
      */
-    startScan(duration=10000) {
+    async startScan() {
         console.log("Scanning for devices", this.queryOptions, "...");
-
-        // Do not start again, if already scanning.
-        if (this.browser) {
-            return;
-        }
 
         // Save browser in order to end its life when required.
         this.browser = this.bonjourInstance.find(this.queryOptions);
@@ -104,17 +93,7 @@ class DeviceManager {
         this.browser.on("up", this.saveDevice.bind(this));
         this.browser.on("down", this.#forgetDevice.bind(this));
 
-        setTimeout(this.#stopScan.bind(this), duration);
-    }
-
-    /**
-     * Stop and reset scanning.
-     */
-    #stopScan() {
-        this.browser.stop();
-        this.browser = null;
-
-        console.log("Stopped scanning for devices.");
+        this.browser.start();
     }
 
     /**
@@ -144,6 +123,15 @@ class DeviceManager {
     async #addNewDevice(serviceData) {
         let device = await this.deviceCollection.findOne({ name: serviceData.name });
         if (!device) {
+            // Add the address from txt field to the address list if it is not already there.
+            // (The supervisors should set this field to correspond to the device's address.)
+            if (
+                serviceData.txt && serviceData.txt.address &&
+                !serviceData.addresses.includes(serviceData.txt.address)
+            ) {
+                serviceData.addresses.push(serviceData.txt.address);
+            }
+
             // Transform the service into usable device data.
             device = new Device(serviceData.name, serviceData.addresses, serviceData.port);
             this.deviceCollection.insertOne(device);
@@ -156,25 +144,19 @@ class DeviceManager {
         return device;
     }
 
-    /**
-     * Perform tasks for device introduction.
-     *
-     * Query device __for 'data'-events__ on its description path and if fails,
-     * remove from mDNS-cache.
-     * @param {*} device The device to introduce.
-     */
-    async #deviceIntroduction(device) {
-        const handleIntroductionErrorBound = (function handleIntroductionError(errorMsg) {
-                // Find and forget the service in question whose advertised
-                // host failed to answer to HTTP-GET.
+    async handleDeviceIntroduction(device, address) {
+        const reportIntroductionErrorBound = (function reportIntroductionError(errorMsg) {
                 console.log(" Error in device introduction: ", errorMsg);
-                this.#forgetDevice(device.name);
-            })
-            .bind(this);
+            });
 
-        // FIXME: Using first address but might want to try all available.
-        let url = new URL(`http://${device.communication.addresses[0]}:${device.communication.port}`);
-        url.pathname = device.deviceDescriptionPath || DEVICE_DESC_ROUTE;
+        let url = null;
+        try {
+            url = new URL(`http://${address}:${device.communication.port}`);
+            url.pathname = device.deviceDescriptionPath || DEVICE_DESC_ROUTE;
+        } catch (error) {
+            reportIntroductionErrorBound(`Invalid URL for device description: ${error}`);
+            return false;
+        }
 
         console.log("Querying device description via GET", url.toString());
 
@@ -182,14 +164,14 @@ class DeviceManager {
         try {
             res = await fetch(url);
             if (res.status !== 200) {
-                handleIntroductionErrorBound(
+                reportIntroductionErrorBound(
                     `${JSON.stringify(device.communication, null, 2)} responded ${res.status} ${res.statusText}`
                 );
-                return;
+                return false;
             }
         } catch (error) {
-            handleIntroductionErrorBound(`fetch error with url ${url}: ${error}`);
-            return;
+            reportIntroductionErrorBound(`fetch error with url ${url}: ${error}`);
+            return false;
         }
 
         let deviceDescription;
@@ -198,16 +180,69 @@ class DeviceManager {
             // WasmIoT TODO Perform validation.
             deviceDescription = await res.json();
         } catch (error) {
-            handleIntroductionErrorBound(`description JSON is malformed: ${error}`);
-            return;
+            reportIntroductionErrorBound(`description JSON is malformed: ${error}`);
+            return false;
         }
 
         this.deviceCollection.updateOne({ name: device.name }, { $set: { description: deviceDescription } });
 
-        console.log(`Added description for device '${device.name}'`);
+        return true;
+    }
 
-        // Do an initial health check on the new device.
-        this.healthCheck(device.name);
+    /**
+     * Perform tasks for device introduction.
+     *
+     * Query device __for 'data'-events__ on its description path and if fails,
+     * remove from mDNS-cache.
+     * @param {*} device The device to introduce.
+     */
+    async #deviceIntroduction(device) {
+        for (let address of device.communication.addresses) {
+            const deviceIntroductionSuccess = await this.handleDeviceIntroduction(
+                device,
+                address
+            );
+            if (deviceIntroductionSuccess) {
+                console.log(`Added description for device '${device.name}'`);
+
+                // Do an initial health check on the new device.
+                this.healthCheck(device.name);
+                return;
+            }
+        }
+        // If no address worked, then forget the device.
+        console.log(`No address worked for device '${device.name}', forgetting it.`);
+        this.#forgetDevice(device.name);
+    }
+
+    async registerOrchestratorUrl(device) {
+        // Register the public URL of the orchestrator to the discovered device.
+        for (let address of device.communication.addresses) {
+            let check = await this.#registerOrchestratorUrlToDevice(device, address);
+            if (check) {
+                return;
+            }
+        }
+    }
+
+    async #registerOrchestratorUrlToDevice(device, address) {
+        // Register the public URL of the orchestrator to the discovered device.
+        // An error here is not considered fatal, so only output the result to console.
+        try {
+            let url = new URL(`http://${address}:${device.communication.port}`);
+            url.pathname = "register";
+            console.log(`Registering orchestrator URL with device (${device.name})`);
+            let registerResponse = await fetch(url, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ url: PUBLIC_BASE_URI.slice(0, -1) }),
+            })
+            if (registerResponse.status !== 200) {
+                console.log(`Error registering orchestrator URL (${device.name}): (${registerResponse.status}) ${registerResponse.statusText}`);
+            }
+        } catch (error) {
+            console.log(`Error registering orchestrator URL (${device.name}): ${error}`);
+        }
     }
 
     /**
@@ -247,7 +282,15 @@ class DeviceManager {
             let health;
             try {
                 health = await x.check;
-                healthyCount++;
+                if (health) {
+                    healthyCount++;
+                }
+                else {
+                    console.log(
+                        `Forgetting device with health problems (device: ${x.device}, timestamp: ${x.timestamp.toISOString()})`);
+                    this.#forgetDevice(x.device);
+                    continue;
+                }
             } catch (e) {
                 console.log(
                     `Forgetting device with health problems (device: ${x.device}, timestamp: ${x.timestamp.toISOString()}):`, e.message
@@ -297,19 +340,47 @@ class DeviceManager {
      * @throws If there were error querying the device.
      */
     async #healthCheckDevice(device) {
-        let url = new URL(`http://${device.communication.addresses[0]}:${device.communication.port}/${device.healthCheckPath || DEVICE_HEALTH_ROUTE}`);
-        try {
-            let res = await fetch(url);
+        const healthCheckPath = device.healthCheckPath || DEVICE_HEALTH_ROUTE.substring(1);
+        const public_ip = new URL(PUBLIC_BASE_URI).hostname;
+        let failedAddresses = [];
 
-            if (res.status !== 200) {
-                throw `${url.toString()} responded ${res.status} ${res.statusText}`
+        for (let address of device.communication.addresses) {
+            try {
+                let url = new URL(`http://${address}:${device.communication.port}/${healthCheckPath}`);
+                let res = await fetch(url, {headers: {"X-Forwarded-For": public_ip}})
+
+                if (res.status !== 200) {
+                    console.log(`Health-check for device '${device.name}' using address '${address}' failed: ${res.status} ${res.statusText}`);
+                    continue;
+                }
+                else if (device.name !== "orchestrator") {
+                    const orchestratorHeader = res.headers.get("Custom-Orchestrator-Set");
+                    if (orchestratorHeader !== "true") {
+                        console.log("Orchestrator URL not set for device", device.name);
+                        this.registerOrchestratorUrl(device);
+                    }
+                }
+
+                if (failedAddresses.length > 0) {
+                    // Since we got a successful response, we can remove the failed addresses from the device.
+                    device.communication.addresses = device.communication.addresses.filter(
+                        addr => !failedAddresses.includes(addr)
+                    );
+                    this.deviceCollection.updateOne(
+                        { name: device.name },
+                        { $set: { communication: device.communication } }
+                    );
+                }
+                return res.json();
             }
+            catch (error) {
+                console.log(`Health-check failed for device '${device.name}' using address '${address}': ${error}`);
+                failedAddresses.push(address);
+            }
+        }
 
-            return res.json();
-        }
-        catch (error) {
-            console.log(`Health-check failed for device '${device.name}': ${error}`);
-        }
+        // If all addresses failed, return false
+        return false;
     }
 }
 
