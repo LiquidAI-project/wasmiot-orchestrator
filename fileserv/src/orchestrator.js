@@ -151,7 +151,7 @@ class Orchestrator {
      */
     async findFirstActiveDevice (deviceIds) {
         for (const id of deviceIds) {
-            const device = await this.deviceCollection.findOne({ _id: ObjectId(id), status: "active" });
+            const device = await this.deviceCollection.findOne({ _id: new ObjectId(id), status: "active" });
             if (device) return id;
         }
         return null;
@@ -188,7 +188,7 @@ class Orchestrator {
             let deployment;
             let modified = false;
             try {
-                deployment = await this.deploymentCollection.findOne({ _id: ObjectId(deploymentId) });
+                deployment = await this.deploymentCollection.findOne({ _id: new ObjectId(deploymentId) });
             } catch (err) {
                 console.error(`Invalid deploymentId '${deploymentId}':`, err);
                 continue;
@@ -211,7 +211,7 @@ class Orchestrator {
             
                     if (activeFailover) {
                         console.log(`Replacing device at step ${i} from ${inactiveDeviceId} to ${activeFailover}`);
-                        deployment.sequence[i].device = ObjectId(activeFailover);
+                        deployment.sequence[i].device = new ObjectId(activeFailover);
                         modified = true;
                     } else {
                         console.warn(`No active failover found for step ${i}`);
@@ -221,7 +221,7 @@ class Orchestrator {
             if (modified) {
                 //Should saving this to the database happen in deployment.js file instead?
                 await this.deploymentCollection.updateOne(
-                    { _id: ObjectId(deploymentId) },
+                    { _id: new ObjectId(deploymentId) },
                     { $set: { sequence: deployment.sequence } }
                 );
                 console.log(`Deployment ${deploymentId} updated with new failover device(s).`);
@@ -299,7 +299,7 @@ class Orchestrator {
         const deviceIdsArray = solution.sequence.map(item => item.device);
 
         await this.deploymentCollection.updateOne(
-            { _id: ObjectId(deploymentId) },
+            { _id: new ObjectId(deploymentId) },
             { $set: { goalDeployment: deviceIdsArray } } // Save the array of device IDs as goalDeployment
         );
 

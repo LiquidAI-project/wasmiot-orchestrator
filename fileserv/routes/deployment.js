@@ -207,11 +207,10 @@ const updateDeployment = async (request, response) => {
 };
 
 const updateFailovers = async (request, response) => {
-    // This is a special endpoint for Stellatest that updates the failovers for the given deployment.
+    //Updates the failovers for the given deployment.
     let deploymentId = request.params.deploymentId;
     let deployment = request.body.deployment;
 
-    //ota talteen onko deployment active vai ei -> jos on niin tryDeploy
     const isActive = deployment.active;
 
     try {
