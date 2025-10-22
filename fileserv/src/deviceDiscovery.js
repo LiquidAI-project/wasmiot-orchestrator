@@ -318,7 +318,36 @@ class DeviceManager {
         device["okHealthCheckCount"] = (device["okHealthCheckCount"] || 0) + 1;
         console.log('Health check count for device', device.name, 'okay, count:', device["okHealthCheckCount"]);
 
-        if (device["status"] != "active" && DEVICE_HEALTHCHECK_THRESHOLD <= device["okHealthCheckCount"]) {
+        const wasInactive = device.status !== "active";
+
+        if (wasInactive && DEVICE_HEALTHCHECK_THRESHOLD <= device["okHealthCheckCount"]) {
+            
+            const recoveringDeviceId = device._id.toString();
+            try {
+                const failoverDeployments = await orchestrator.deploymentCollection
+                .find({
+                    isInFailover: true,
+                    goalDeployment: { $in: [recoveringDeviceId] }
+                })
+                .toArray();
+
+                console.log("Failover deployments:", failoverDeployments);
+
+                if (failoverDeployments.length > 0) {
+                    console.log(`Recovering device ${device.name} is part of ${failoverDeployments.length} deployment(s) in failover mode — starting recovery logic.`);
+
+                    try {
+                        //await orchestrator.recoverFromFailover(failoverDeployments, recoveringDeviceId);
+                    } catch (recErr) {
+                        console.error(`Error during recovery for device ${device.name}:`, recErr);
+                    }
+                }
+            } catch (queryErr) {
+                // DB query errors shouldn't mark the health check as failed
+                console.error('Error querying failover deployments for recovery:', queryErr);
+            }
+
+            // Set device status to active and save logs.
             device["status"] = "active";
             device["statusLog"].unshift({ status: "active", time: date });
             console.log("Device", device.name, "is now active");
@@ -346,10 +375,9 @@ class DeviceManager {
             //Checks if the device going to inactive state has been used in active deployments
             const deviceId = device._id.toString();
             const inactiveDeviceDeployments = await orchestrator.fetchDeployments(deviceId);
-            console.log("Deployments for inactive device:");
-            console.log(inactiveDeviceDeployments);
-            orchestrator.switchToFailovers(inactiveDeviceDeployments, deviceId);
-            //+ how to return to the original deployment?
+            if (inactiveDeviceDeployments && inactiveDeviceDeployments.length > 0) {
+                orchestrator.switchToFailovers(inactiveDeviceDeployments, deviceId);
+            }
         }
 
         await this.updateDevice(device, deviceCollection);

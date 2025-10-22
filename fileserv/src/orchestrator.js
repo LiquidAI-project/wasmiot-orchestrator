@@ -144,6 +144,10 @@ class Orchestrator {
         this.messageDevice = options.deviceMessagingFunction;
     }
 
+    async recoverFromFailover(failovereDeployments, recoveringDeviceId) {
+        //TODO: implement logic to recover from failover
+    }
+
     /**
      * Finds the first active device from a list of device IDs.
      * @param {string[]} deviceIds - Array of device IDs (as strings).
@@ -219,22 +223,24 @@ class Orchestrator {
                 } 
             }
             if (modified) {
-                //Should saving this to the database happen in deployment.js file instead?
+                // Update the deployment in the database and set isInFailover to true
                 await this.deploymentCollection.updateOne(
                     { _id: new ObjectId(deploymentId) },
-                    { $set: { sequence: deployment.sequence } }
+                    { 
+                        $set: { 
+                            sequence: deployment.sequence,
+                            isInFailover: true
+                        } 
+                    }
                 );
-                console.log(`Deployment ${deploymentId} updated with new failover device(s).`);
-                //TODO: Send information to the devices about the changed deployment!
-                console.log(this.packageManagerBaseUrl);
+                // Deploy the updated deployment to devices
                 const endpointUrl = `${this.packageManagerBaseUrl}file/manifest/stellatest/${deploymentId}`;
-                console.log(endpointUrl);
                 try {
                     const result = await utils.apiCall(endpointUrl, 'PUT', JSON.stringify({ deployment }));
                     console.log("API result:", result);
                 }
                 catch (error) {
-                    console.error(`Error updating deployment ${deploymentId}:`, error);
+                    console.error(`Error updating failovers for deployment ${deploymentId}:`, error);
                 }
             }
         }
@@ -291,17 +297,25 @@ class Orchestrator {
         if (resolving) {
             deploymentId = manifest._id;
         } else {
-            deploymentId = (await this.deploymentCollection.insertOne({manifest, active: false, failoversBySequence})).insertedId;
+            deploymentId = (await this.deploymentCollection.insertOne({name:manifest.name, active: false, failoversBySequence})).insertedId;
         }
         let solution = createSolution(deploymentId, assignedSequence, this.packageManagerBaseUrl)
 
         // Extract device IDs from the sequence array within the solution object
-        const deviceIdsArray = solution.sequence.map(item => item.device);
+        const deviceIdsArray = solution.sequence.map(item => item.device.toString());
 
+        // Update the goalDeployment field in the deployment document only if failover protocol is inactive or not set
         await this.deploymentCollection.updateOne(
-            { _id: new ObjectId(deploymentId) },
-            { $set: { goalDeployment: deviceIdsArray } } // Save the array of device IDs as goalDeployment
-        );
+            {
+              _id: new ObjectId(deploymentId),
+              $or: [
+                { isInFailover: { $exists: false } },
+                { isInFailover: false }
+
+              ]
+            },
+            { $set: { goalDeployment: deviceIdsArray } }
+          );          
 
         // Check validity of the solution.
         let validationError = null;
@@ -341,17 +355,9 @@ class Orchestrator {
                 throw new DeviceNotFound("", deviceId);
             }
 
-            //TODO: luo oma error sille jos device on inactive?
-            if (device.status !== "active") {
-                throw new DeviceNotFound("", deviceId);
-            }
-
             // Start the deployment requests on each device.
             requests.push([deviceId, this.messageDevice(device, "/deploy", manifest)]);
         }
-
-        console.log("Tässä requestit:");
-        console.log(requests);
 
         // Return devices mapped to their awaited deployment responses.
         let deploymentResponse = Object.fromEntries(await Promise.all(
