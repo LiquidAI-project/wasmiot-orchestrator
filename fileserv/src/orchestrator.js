@@ -144,8 +144,52 @@ class Orchestrator {
         this.messageDevice = options.deviceMessagingFunction;
     }
 
-    async recoverFromFailover(failovereDeployments, recoveringDeviceId) {
-        //TODO: implement logic to recover from failover
+    /**
+     * Recover deployments from failover state when a device comes back online.
+     * @param {*} failoverDeployments Deployments that have been switched to failover logic.
+     * @param {*} recoveringDeviceId Device that is coming back online and should be restored to original deployment.
+     */
+    async recoverFromFailover(failoverDeployments, recoveringDeviceId) {
+        for (const deployment of failoverDeployments) {
+            const deploymentId = deployment._id.toString();
+            let modified = false;
+    
+            // Get the target position of the recovering device from goalDeployment
+            const goalIndex = deployment.goalDeployment.indexOf(recoveringDeviceId);
+    
+            if (goalIndex === -1) {
+                console.log(`Device ${recoveringDeviceId} is not part of goalDeployment for deployment ${deploymentId}. Skipping.`);
+                continue;
+            }
+    
+            // Get current device ID at that position (convert from ObjectId if needed)
+            const currentDeviceId = deployment.sequence[goalIndex].device.toString();
+    
+            if (currentDeviceId !== recoveringDeviceId) {
+                console.log(`Recovering: Replacing device at index ${goalIndex} in deployment ${deploymentId} from ${currentDeviceId} → ${recoveringDeviceId}`);
+                deployment.sequence[goalIndex].device = recoveringDeviceId;
+                modified = true;
+            }
+    
+            if (modified) {
+                // Update database
+                await this.deploymentCollection.updateOne(
+                    { _id: deployment._id },
+                    { $set: { sequence: deployment.sequence, isInFailover: false } }
+                );
+    
+                console.log(`Deployment ${deploymentId} recovered.`);
+    
+                // Re-deploy the updated deployment
+                const endpointUrl = `${this.packageManagerBaseUrl}file/manifest/failover/${deploymentId}`;
+                try {
+                    const result = await utils.apiCall(endpointUrl, 'PUT', JSON.stringify({ deployment }));
+                    console.log(`Deployment ${deploymentId} redeployed successfully:`, result);
+                } catch (err) {
+                    console.error(`Error redeploying recovered deployment ${deploymentId}:`, err);
+                }
+            }
+        }
     }
 
     /**
@@ -185,6 +229,12 @@ class Orchestrator {
         return deploymentIds;
     }
 
+    /**
+     * Switches the deployments to use failover devices instead of the inactive device.
+     * @param {*} deploymentIds Deployments that need to be switched to failover devices.
+     * @param {*} inactiveDeviceId Device that needs to be replaced.
+     * @returns 
+     */
     async switchToFailovers (deploymentIds, inactiveDeviceId) {
         //Edit the devices from the matched devices id to the failover devices...
     
@@ -234,7 +284,7 @@ class Orchestrator {
                     }
                 );
                 // Deploy the updated deployment to devices
-                const endpointUrl = `${this.packageManagerBaseUrl}file/manifest/stellatest/${deploymentId}`;
+                const endpointUrl = `${this.packageManagerBaseUrl}file/manifest/failover/${deploymentId}`;
                 try {
                     const result = await utils.apiCall(endpointUrl, 'PUT', JSON.stringify({ deployment }));
                     console.log("API result:", result);

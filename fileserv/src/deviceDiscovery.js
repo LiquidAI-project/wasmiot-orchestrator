@@ -331,13 +331,11 @@ class DeviceManager {
                 })
                 .toArray();
 
-                console.log("Failover deployments:", failoverDeployments);
-
                 if (failoverDeployments.length > 0) {
                     console.log(`Recovering device ${device.name} is part of ${failoverDeployments.length} deployment(s) in failover mode — starting recovery logic.`);
 
                     try {
-                        //await orchestrator.recoverFromFailover(failoverDeployments, recoveringDeviceId);
+                        await orchestrator.recoverFromFailover(failoverDeployments, recoveringDeviceId);
                     } catch (recErr) {
                         console.error(`Error during recovery for device ${device.name}:`, recErr);
                     }

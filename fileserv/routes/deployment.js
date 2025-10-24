@@ -206,8 +206,10 @@ const updateDeployment = async (request, response) => {
     }
 };
 
-const updateFailovers = async (request, response) => {
-    //Updates the failovers for the given deployment.
+/**
+ * Updates the sequence of a deployment in failover/recovery logic and deploys it to the devices if the deployment is active.
+ */
+const updateSequence = async (request, response) => {
     let deploymentId = request.params.deploymentId;
     let deployment = request.body.deployment;
 
@@ -237,7 +239,7 @@ router.get("/:deploymentId", getDeployment);
 router.get("/", getDeployments);
 router.post("/", createDeployment);
 router.post("/:deploymentId", deploy);
-router.put("/stellatest/:deploymentId", updateFailovers);
+router.put("/failover/:deploymentId", updateSequence);
 router.put("/:deploymentId", updateDeployment);
 router.delete("/", deleteDeployments);
 
