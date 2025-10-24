@@ -14,6 +14,7 @@ const nodeCards = require("./nodeCards");
 const dataSourceCards = require("./dataSourceCards");
 const zoneRiskLevels = require("./zonesAndRiskLevels");
 const deploymentCertificates = require("./deploymentCertificates");
+const deviceDiscovery = require("../src/deviceDiscovery");
 
 
 /* Set common dependencies between the API routes. */
@@ -39,6 +40,8 @@ async function init(routeDependencies) {
 
     let coreServicesRouter = await initCoreServices(routeDependencies);
     supervisorLogs.setDatabase(routeDependencies.database);
+
+    deviceDiscovery.setOrchestrator(routeDependencies.orchestrator);
 
     return {
         device: device.router,

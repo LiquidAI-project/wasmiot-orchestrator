@@ -144,6 +144,160 @@ class Orchestrator {
         this.messageDevice = options.deviceMessagingFunction;
     }
 
+    /**
+     * Recover deployments from failover state when a device comes back online.
+     * @param {*} failoverDeployments Deployments that have been switched to failover logic.
+     * @param {*} recoveringDeviceId Device that is coming back online and should be restored to original deployment.
+     */
+    async recoverFromFailover(failoverDeployments, recoveringDeviceId) {
+        for (const deployment of failoverDeployments) {
+            const deploymentId = deployment._id.toString();
+            let modified = false;
+    
+            // Get the target position of the recovering device from goalDeployment
+            const goalIndex = deployment.goalDeployment.indexOf(recoveringDeviceId);
+    
+            if (goalIndex === -1) {
+                console.log(`Device ${recoveringDeviceId} is not part of goalDeployment for deployment ${deploymentId}. Skipping.`);
+                continue;
+            }
+    
+            // Get current device ID at that position (convert from ObjectId if needed)
+            const currentDeviceId = deployment.sequence[goalIndex].device.toString();
+    
+            if (currentDeviceId !== recoveringDeviceId) {
+                console.log(`Recovering: Replacing device at index ${goalIndex} in deployment ${deploymentId} from ${currentDeviceId} → ${recoveringDeviceId}`);
+                deployment.sequence[goalIndex].device = recoveringDeviceId;
+                modified = true;
+            }
+    
+            if (modified) {
+                // Update database
+                await this.deploymentCollection.updateOne(
+                    { _id: deployment._id },
+                    { $set: { sequence: deployment.sequence, isInFailover: false } }
+                );
+    
+                console.log(`Deployment ${deploymentId} recovered.`);
+    
+                // Re-deploy the updated deployment
+                const endpointUrl = `${this.packageManagerBaseUrl}file/manifest/failover/${deploymentId}`;
+                try {
+                    const result = await utils.apiCall(endpointUrl, 'PUT', JSON.stringify({ deployment }));
+                    console.log(`Deployment ${deploymentId} redeployed successfully:`, result);
+                } catch (err) {
+                    console.error(`Error redeploying recovered deployment ${deploymentId}:`, err);
+                }
+            }
+        }
+    }
+
+    /**
+     * Finds the first active device from a list of device IDs.
+     * @param {string[]} deviceIds - Array of device IDs (as strings).
+     * @returns {Promise<string|null>} - The ID of the first active device, or null if none are active.
+     */
+    async findFirstActiveDevice (deviceIds) {
+        for (const id of deviceIds) {
+            const device = await this.deviceCollection.findOne({ _id: new ObjectId(id), status: "active" });
+            if (device) return id;
+        }
+        return null;
+    };
+
+    /**
+     * Fetch all deployments from database that are active and include the deviceId.
+     * @param {*} deviceId 
+     * @returns list of deployments that are active and include the deviceId.
+     */
+    async fetchDeployments (deviceId) {
+        const deployments = await (await this.deploymentCollection.find()).toArray();
+        const deploymentIds = [];
+
+        for (const deployment of deployments) {
+            //if (!deployment.active || !Array.isArray(deployment.sequence)) continue;
+
+            const includesDevice = deployment.sequence.some(step =>
+                step.device && step.device.equals(deviceId)
+            );
+
+            if (includesDevice) {
+                deploymentIds.push(deployment._id.toString());
+            }
+        }
+
+        return deploymentIds;
+    }
+
+    /**
+     * Switches the deployments to use failover devices instead of the inactive device.
+     * @param {*} deploymentIds Deployments that need to be switched to failover devices.
+     * @param {*} inactiveDeviceId Device that needs to be replaced.
+     * @returns 
+     */
+    async switchToFailovers (deploymentIds, inactiveDeviceId) {
+        //Edit the devices from the matched devices id to the failover devices...
+    
+        for (const deploymentId of deploymentIds) {
+            let deployment;
+            let modified = false;
+            try {
+                deployment = await this.deploymentCollection.findOne({ _id: new ObjectId(deploymentId) });
+            } catch (err) {
+                console.error(`Invalid deploymentId '${deploymentId}':`, err);
+                continue;
+            }
+    
+            if (!deployment) {
+                console.warn(`Deployment with ID ${deploymentId} not found.`);
+                continue;
+            }
+    
+            for (let i = 0; i < deployment.failoversBySequence.length; i++) {
+                const failoverGroup = deployment.failoversBySequence[i];
+                if (!Array.isArray(failoverGroup) || failoverGroup.length < 2) continue;
+            
+                const originalDeviceId = failoverGroup[0];
+                if (originalDeviceId === inactiveDeviceId) {
+                    const failoverCandidates = failoverGroup.slice(1); // skip index 0
+                    //Check that the failover device is active
+                    const activeFailover = await this.findFirstActiveDevice(failoverCandidates);
+            
+                    if (activeFailover) {
+                        console.log(`Replacing device at step ${i} from ${inactiveDeviceId} to ${activeFailover}`);
+                        deployment.sequence[i].device = new ObjectId(activeFailover);
+                        modified = true;
+                    } else {
+                        console.warn(`No active failover found for step ${i}`);
+                    }
+                } 
+            }
+            if (modified) {
+                // Update the deployment in the database and set isInFailover to true
+                await this.deploymentCollection.updateOne(
+                    { _id: new ObjectId(deploymentId) },
+                    { 
+                        $set: { 
+                            sequence: deployment.sequence,
+                            isInFailover: true
+                        } 
+                    }
+                );
+                // Deploy the updated deployment to devices
+                const endpointUrl = `${this.packageManagerBaseUrl}file/manifest/failover/${deploymentId}`;
+                try {
+                    const result = await utils.apiCall(endpointUrl, 'PUT', JSON.stringify({ deployment }));
+                    console.log("API result:", result);
+                }
+                catch (error) {
+                    console.error(`Error updating failovers for deployment ${deploymentId}:`, error);
+                }
+            }
+        }
+
+        return;
+    }
+
     async solve(manifest, resolving=false) {
         // Gather the devices and modules attached to deployment in "full"
         // (i.e., not just database IDs).
@@ -151,7 +305,13 @@ class Orchestrator {
         // The original deployment should be saved to database as is with the
         // IDs TODO: Exactly why should it be saved?.
         let hydratedManifest = structuredClone(manifest);
+        let failoversBySequence = [];
+        let i = 0;
+
+        console.log(hydratedManifest.sequence);
+
         for (let step of hydratedManifest.sequence) {
+            const manifestStep = manifest.sequence[i];
             step.device = availableDevices.find(x => x._id.toString() === step.device);
             // Find with id or name to support finding core modules more easily.
             let filter = {};
@@ -166,23 +326,46 @@ class Orchestrator {
             // from registry/URL if not found locally.
             // TODO: Actually use a remote-fetch.
             step.module = await this.moduleCollection.findOne(filter);
+            // Handle the failovers field in original manifest.
+            let group = [manifestStep.device];
+            if (Array.isArray(manifestStep.failovers) && manifestStep.failovers.length > 0) {
+                group = group.concat(manifestStep.failovers);
+            } else {
+                manifestStep.failovers = null;
+            }
+            failoversBySequence.push(group);
+            i++;
         }
 
         //TODO: Start searching for suitable packages using saved file.
         //startSearch();
-
         let assignedSequence = fetchAndFindResources(hydratedManifest.sequence, availableDevices);
-
         // Now that the deployment is deemed possible, an ID is needed to
         // construct the instructions on devices.
+        console.log(assignedSequence);
         let deploymentId;
         if (resolving) {
             deploymentId = manifest._id;
         } else {
-            deploymentId = (await this.deploymentCollection.insertOne(manifest)).insertedId;
+            deploymentId = (await this.deploymentCollection.insertOne({name:manifest.name, active: false, failoversBySequence})).insertedId;
         }
-
         let solution = createSolution(deploymentId, assignedSequence, this.packageManagerBaseUrl)
+
+        // Extract device IDs from the sequence array within the solution object
+        const deviceIdsArray = solution.sequence.map(item => item.device.toString());
+
+        // Update the goalDeployment field in the deployment document only if failover protocol is inactive or not set
+        await this.deploymentCollection.updateOne(
+            {
+              _id: new ObjectId(deploymentId),
+              $or: [
+                { isInFailover: { $exists: false } },
+                { isInFailover: false }
+
+              ]
+            },
+            { $set: { goalDeployment: deviceIdsArray } }
+          );          
 
         // Check validity of the solution.
         let validationError = null;
@@ -1017,5 +1200,5 @@ const ORCHESTRATOR_WASMIOT_DEVICE_DESCRIPTION = {
 module.exports = {
     Orchestrator,
     ORCHESTRATOR_ADVERTISEMENT,
-    ORCHESTRATOR_WASMIOT_DEVICE_DESCRIPTION
+    ORCHESTRATOR_WASMIOT_DEVICE_DESCRIPTION,
 };

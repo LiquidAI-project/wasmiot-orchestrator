@@ -206,11 +206,40 @@ const updateDeployment = async (request, response) => {
     }
 };
 
+/**
+ * Updates the sequence of a deployment in failover/recovery logic and deploys it to the devices if the deployment is active.
+ */
+const updateSequence = async (request, response) => {
+    let deploymentId = request.params.deploymentId;
+    let deployment = request.body.deployment;
+
+    const isActive = deployment.active;
+
+    try {
+        deployment = await orchestrator.solve(deployment, true);
+    } catch (err) {
+        errorMsg = "Failed updating manifest for deployment" + deploymentId + err;
+
+        console.error(errorMsg, err.stack);
+
+        response
+            .status(500)
+            .json(new utils.Error(errorMsg));
+    }
+
+    if (isActive) {
+        tryDeploy(deployment, response);
+    } else {
+        response.status(204).send();
+    }
+}
+
 const router = express.Router();
 router.get("/:deploymentId", getDeployment);
 router.get("/", getDeployments);
 router.post("/", createDeployment);
 router.post("/:deploymentId", deploy);
+router.put("/failover/:deploymentId", updateSequence);
 router.put("/:deploymentId", updateDeployment);
 router.delete("/", deleteDeployments);
 

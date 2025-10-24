@@ -3,10 +3,19 @@
  * supervisor.
  */
 
+const { fetchDeployments } = require("./../routes/deployment.js");
+const { switchToFailovers } = require("./../routes/deployment.js");
+
 const bonjour = require("bonjour-service");
-const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, PUBLIC_BASE_URI } = require("../constants.js");
+const { DEVICE_DESC_ROUTE, DEVICE_HEALTH_ROUTE, DEVICE_HEALTH_CHECK_INTERVAL_MS, PUBLIC_BASE_URI, DEVICE_HEALTHCHECK_THRESHOLD } = require("../constants.js");
 
 const { ORCHESTRATOR_ADVERTISEMENT } = require("./orchestrator.js");
+
+let orchestrator = null;
+
+function setOrchestrator(orch) {
+    orchestrator = orch;
+}
 
 /**
  * Thing running the Wasm-IoT supervisor.
@@ -134,6 +143,10 @@ class DeviceManager {
 
             // Transform the service into usable device data.
             device = new Device(serviceData.name, serviceData.addresses, serviceData.port);
+            device["status"] = "active";
+            device["failedHealthCheckCount"] = 0;
+            device["okHealthCheckCount"] = 0;
+            device["statusLog"] = [];
             this.deviceCollection.insertOne(device);
         } else {
             if (device.description && device.description.platform) {
@@ -269,51 +282,120 @@ class DeviceManager {
     async healthCheck(deviceName) {
         let devices = await (await this.deviceCollection.find(deviceName ? { name: deviceName } : {})).toArray();
 
-        let date = new Date();
-        let healthChecks = devices.map(x => ({
-                device: x.name,
-                // Gather promises to be awaited.
-                check: this.#healthCheckDevice(x),
-                timestamp: date,
-            }));
-
         let healthyCount = 0;
-        for (let x of healthChecks) {
-            let health;
+        const date = new Date();
+        for (let device of devices) {
+            if (!device["failedHealthCheckCount"]) {
+                device["failedHealthCheckCount"] = 0;
+            }
+            if (!device["okHealthCheckCount"]) {
+                device["okHealthCheckCount"] = 0;
+            }
+            if (!device["statusLog"]) {
+                device["statusLog"] = [];
+            }
             try {
-                health = await x.check;
-                if (health) {
+                if (await this.successfulHealthCheck(device, this.deviceCollection, date)) {
                     healthyCount++;
                 }
-                else {
-                    console.log(
-                        `Forgetting device with health problems (device: ${x.device}, timestamp: ${x.timestamp.toISOString()})`);
-                    this.#forgetDevice(x.device);
-                    continue;
-                }
-            } catch (e) {
-                console.log(
-                    `Forgetting device with health problems (device: ${x.device}, timestamp: ${x.timestamp.toISOString()}):`, e.message
-                );
-                this.#forgetDevice(x.device);
-                continue;
             }
-
-            this.deviceCollection.updateOne(
-                { name: x.device },
-                {
-                    $set: {
-                        health: {
-                            report: health,
-                            timeOfQuery: x.timestamp,
-                        }
-                    }
-                }
-            );
+            catch (e) {
+                await this.unsuccessfulHealthCheck(device, this.deviceCollection, date);
+            }
         }
+         
         return healthyCount;
     }
 
+    async successfulHealthCheck(device, deviceCollection, date) {
+        const checkResult = await this.#healthCheckDevice(device);
+
+        device["health"] = {
+            report: checkResult,
+            timeOfQuery: date
+        };
+        device["failedHealthCheckCount"] = 0;
+        device["okHealthCheckCount"] = (device["okHealthCheckCount"] || 0) + 1;
+        console.log('Health check count for device', device.name, 'okay, count:', device["okHealthCheckCount"]);
+
+        const wasInactive = device.status !== "active";
+
+        if (wasInactive && DEVICE_HEALTHCHECK_THRESHOLD <= device["okHealthCheckCount"]) {
+            
+            const recoveringDeviceId = device._id.toString();
+            try {
+                const failoverDeployments = await orchestrator.deploymentCollection
+                .find({
+                    isInFailover: true,
+                    goalDeployment: { $in: [recoveringDeviceId] }
+                })
+                .toArray();
+
+                if (failoverDeployments.length > 0) {
+                    console.log(`Recovering device ${device.name} is part of ${failoverDeployments.length} deployment(s) in failover mode — starting recovery logic.`);
+
+                    try {
+                        await orchestrator.recoverFromFailover(failoverDeployments, recoveringDeviceId);
+                    } catch (recErr) {
+                        console.error(`Error during recovery for device ${device.name}:`, recErr);
+                    }
+                }
+            } catch (queryErr) {
+                // DB query errors shouldn't mark the health check as failed
+                console.error('Error querying failover deployments for recovery:', queryErr);
+            }
+
+            // Set device status to active and save logs.
+            device["status"] = "active";
+            device["statusLog"].unshift({ status: "active", time: date });
+            console.log("Device", device.name, "is now active");
+        }
+
+        await this.updateDevice(device, deviceCollection);
+
+        return device["status"] === "active";
+    }
+
+    async unsuccessfulHealthCheck(device, deviceCollection, date) {
+        device["health"] = {
+            report: null,
+            timeOfQuery: date
+        };
+        device["okHealthCheckCount"] = 0;
+        device["failedHealthCheckCount"] = (device["failedHealthCheckCount"] || 0) + 1;
+        console.log('Health check count for device', device.name, 'failed, count:', device["failedHealthCheckCount"]);
+
+        if (device["status"] != "inactive" && DEVICE_HEALTHCHECK_THRESHOLD <= device["failedHealthCheckCount"]) {
+            device["status"] = "inactive";
+            device["statusLog"].unshift({ status: "inactive", time: date });
+            console.log("Device", device.name, "is now inactive");
+            
+            //Checks if the device going to inactive state has been used in active deployments
+            const deviceId = device._id.toString();
+            const inactiveDeviceDeployments = await orchestrator.fetchDeployments(deviceId);
+            if (inactiveDeviceDeployments && inactiveDeviceDeployments.length > 0) {
+                orchestrator.switchToFailovers(inactiveDeviceDeployments, deviceId);
+            }
+        }
+
+        await this.updateDevice(device, deviceCollection);
+    }
+
+    async updateDevice(device, deviceCollection) {
+        await deviceCollection.updateOne(
+            { name: device.name },
+            { $set:
+                {
+                    status: device["status"],
+                    failedHealthCheckCount: device["failedHealthCheckCount"],
+                    okHealthCheckCount: device["okHealthCheckCount"],
+                    statusLog: device["statusLog"],
+                    health: device["health"]
+                }
+            }
+        );
+    }
+        
 
     /**
      * Forget a device based on an identifier or one derived from mDNS service data.
@@ -376,6 +458,8 @@ class DeviceManager {
             catch (error) {
                 console.log(`Health-check failed for device '${device.name}' using address '${address}': ${error}`);
                 failedAddresses.push(address);
+                console.log(errorString);
+                throw error;
             }
         }
 
@@ -413,4 +497,5 @@ module.exports = {
     DeviceDiscovery: DeviceManager,
     MockDeviceDiscovery,
     Device,
+    setOrchestrator
 };
