@@ -298,6 +298,85 @@ class Orchestrator {
         return;
     }
 
+    /**
+    * Builds a failover group for a given deployment step.
+    * The group always starts with the original device,
+    * followed by any valid failover devices verified through validation.
+     * @param {Object} manifestStep The manifest step containing the device and optional failovers.
+     * @param {Array<Object>} availableDevices All devices found in orchestrator's database.
+     * @returns {string[]} A list of device IDs (first = original, rest = validated failovers).
+     */
+    async buildFailoverGroup(manifestStep, availableDevices) {
+        const validDeviceIds = availableDevices.map(d => d._id.toString());
+        const group = [];
+    
+        // Always start with the original device
+        const original = manifestStep.device?.toString();
+        group.push(original);
+    
+        // Validate and collect failovers
+        const validFailovers = this.validateFailoverDevices(
+            manifestStep.failovers,
+            original,
+            validDeviceIds,
+            group
+        );
+    
+        // Append valid failovers after the original device
+        group.push(...validFailovers);
+    
+        // If no valid failovers, mark the field as null
+        manifestStep.failovers = validFailovers.length > 0 ? validFailovers : null;
+    
+        return group;
+    }
+
+    /**
+     * Validates and filters the failover device IDs for a manifest step.
+     * Logs warnings for any invalid or duplicate entries.
+     *
+     * @param {string[]} failovers - The list of failover IDs from the manifest step.
+     * @param {string} original - The ID of the original device for this step.
+     * @param {string[]} validDeviceIds - All valid device IDs from the database.
+     * @param {string[]} group - The current failover group (used to avoid duplicates).
+     * @returns {string[]} A filtered array of valid failover device IDs.
+     */
+    validateFailoverDevices(failovers, original, validDeviceIds, group) {
+        if (!Array.isArray(failovers) || failovers.length === 0) {
+            return [];
+        }
+
+        const validFailovers = [];
+
+        for (const id of failovers) {
+            const strId = id?.toString().trim();
+
+            if (!strId || strId === "") {
+                console.warn(`[failoverValidator] Empty or missing failover ID ignored.`);
+                continue;
+            }
+
+            if (strId === original) {
+                console.warn(`[failoverValidator] Failover ID '${strId}' is the same as the original device — skipped.`);
+                continue;
+            }
+
+            if (!validDeviceIds.includes(strId)) {
+                console.warn(`[failoverValidator] Failover ID '${strId}' not found among valid devices — skipped.`);
+                continue;
+            }
+
+            if (group.includes(strId) || validFailovers.includes(strId)) {
+                console.warn(`[failoverValidator] Duplicate failover ID '${strId}' ignored.`);
+                continue;
+            }
+
+            validFailovers.push(strId);
+        }
+
+        return validFailovers;
+    }    
+
     async solve(manifest, resolving=false) {
         // Gather the devices and modules attached to deployment in "full"
         // (i.e., not just database IDs).
@@ -327,13 +406,8 @@ class Orchestrator {
             // TODO: Actually use a remote-fetch.
             step.module = await this.moduleCollection.findOne(filter);
             // Handle the failovers field in original manifest.
-            let group = [manifestStep.device];
-            if (Array.isArray(manifestStep.failovers) && manifestStep.failovers.length > 0) {
-                group = group.concat(manifestStep.failovers);
-            } else {
-                manifestStep.failovers = null;
-            }
-            failoversBySequence.push(group);
+            const failoverDeviceGroup = await this.buildFailoverGroup(manifestStep, availableDevices);
+            failoversBySequence.push(failoverDeviceGroup);
             i++;
         }
 
