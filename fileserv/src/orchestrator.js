@@ -145,6 +145,16 @@ class Orchestrator {
     }
 
     /**
+     * Check if a device is blacklisted.
+     * If the blacklisted field is missing, it is assumed to be false (not blacklisted).
+     * @param {Object} device - Device object from database
+     * @returns {boolean} - True if device is blacklisted, false otherwise
+     */
+    isDeviceBlacklisted(device) {
+        return device.blacklisted === true;
+    }
+
+    /**
      * Recover deployments from failover state when a device comes back online.
      * @param {*} failoverDeployments Deployments that have been switched to failover logic.
      * @param {*} recoveringDeviceId Device that is coming back online and should be restored to original deployment.
@@ -200,26 +210,34 @@ class Orchestrator {
     async findFirstActiveDevice (deviceIds) {
         for (const id of deviceIds) {
             const device = await this.deviceCollection.findOne({ _id: new ObjectId(id), status: "active" });
-            if (device) return id;
+            if (device && !this.isDeviceBlacklisted(device)) {
+                return id;
+            }
         }
         return null;
     };
 
     /**
      * Fetch all deployments from database that are active and include the deviceId.
-     * @param {*} deviceId 
+     * @param {*} deviceId Device ID as string or ObjectId
      * @returns list of deployments that are active and include the deviceId.
      */
     async fetchDeployments (deviceId) {
         const deployments = await (await this.deploymentCollection.find()).toArray();
         const deploymentIds = [];
+        
+        // Convert deviceId to string for comparison
+        const deviceIdStr = deviceId.toString();
 
         for (const deployment of deployments) {
             //if (!deployment.active || !Array.isArray(deployment.sequence)) continue;
 
-            const includesDevice = deployment.sequence.some(step =>
-                step.device && step.device.equals(deviceId)
-            );
+            const includesDevice = deployment.sequence.some(step => {
+                if (!step.device) return false;
+                // Handle both ObjectId and string comparisons
+                const stepDeviceId = step.device.toString ? step.device.toString() : step.device;
+                return stepDeviceId === deviceIdStr;
+            });
 
             if (includesDevice) {
                 deploymentIds.push(deployment._id.toString());
@@ -314,12 +332,13 @@ class Orchestrator {
         const original = manifestStep.device?.toString();
         group.push(original);
     
-        // Validate and collect failovers
+        // Validate and collect failovers (pass availableDevices for blacklist checking)
         const validFailovers = this.validateFailoverDevices(
             manifestStep.failovers,
             original,
             validDeviceIds,
-            group
+            group,
+            availableDevices
         );
     
         // Append valid failovers after the original device
@@ -334,14 +353,16 @@ class Orchestrator {
     /**
      * Validates and filters the failover device IDs for a manifest step.
      * Logs warnings for any invalid or duplicate entries.
+     * Also filters out blacklisted devices.
      *
      * @param {string[]} failovers - The list of failover IDs from the manifest step.
      * @param {string} original - The ID of the original device for this step.
      * @param {string[]} validDeviceIds - All valid device IDs from the database.
      * @param {string[]} group - The current failover group (used to avoid duplicates).
+     * @param {Object[]} availableDevices - All available devices from database (for blacklist checking).
      * @returns {string[]} A filtered array of valid failover device IDs.
      */
-    validateFailoverDevices(failovers, original, validDeviceIds, group) {
+    validateFailoverDevices(failovers, original, validDeviceIds, group, availableDevices = []) {
         if (!Array.isArray(failovers) || failovers.length === 0) {
             return [];
         }
@@ -363,6 +384,13 @@ class Orchestrator {
 
             if (!validDeviceIds.includes(strId)) {
                 console.warn(`[failoverValidator] Failover ID '${strId}' not found among valid devices — skipped.`);
+                continue;
+            }
+
+            // Check if device is blacklisted
+            const device = availableDevices.find(d => d._id.toString() === strId);
+            if (device && this.isDeviceBlacklisted(device)) {
+                console.warn(`[failoverValidator] Failover ID '${strId}' is blacklisted — skipped.`);
                 continue;
             }
 
@@ -389,9 +417,39 @@ class Orchestrator {
 
         console.log(hydratedManifest.sequence);
 
+        // Check for blacklisted devices in the manifest sequence (primary devices and failovers)
+        for (let step of manifest.sequence) {
+            const deviceId = step.device?.toString();
+            if (deviceId) {
+                const device = availableDevices.find(x => x._id.toString() === deviceId);
+                if (device && this.isDeviceBlacklisted(device)) {
+                    throw new Error(`Cannot create deployment: device '${deviceId}' (${device.name || 'unknown'}) is blacklisted`);
+                }
+            }
+            
+            // Check failover devices in the manifest
+            if (Array.isArray(step.failovers)) {
+                for (const failoverId of step.failovers) {
+                    const failoverDeviceId = failoverId?.toString();
+                    if (failoverDeviceId) {
+                        const failoverDevice = availableDevices.find(x => x._id.toString() === failoverDeviceId);
+                        if (failoverDevice && this.isDeviceBlacklisted(failoverDevice)) {
+                            throw new Error(`Cannot create deployment: failover device '${failoverDeviceId}' (${failoverDevice.name || 'unknown'}) is blacklisted`);
+                        }
+                    }
+                }
+            }
+        }
+
         for (let step of hydratedManifest.sequence) {
             const manifestStep = manifest.sequence[i];
             step.device = availableDevices.find(x => x._id.toString() === step.device);
+            
+            // Double-check that the device is not blacklisted (shouldn't happen after above check, but safety check)
+            if (step.device && this.isDeviceBlacklisted(step.device)) {
+                throw new Error(`Cannot create deployment: device '${step.device._id.toString()}' (${step.device.name || 'unknown'}) is blacklisted`);
+            }
+            
             // Find with id or name to support finding core modules more easily.
             let filter = {};
             try {

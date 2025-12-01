@@ -294,6 +294,20 @@ class DeviceManager {
             if (!device["statusLog"]) {
                 device["statusLog"] = [];
             }
+            
+            // Check if device is blacklisted before attempting health check
+            const isBlacklisted = device.blacklisted === true;
+            
+            if (isBlacklisted) {
+                if (device.status === "active") {
+                    // Device was just blacklisted - mark inactive and trigger failover
+                    await this.handleBlacklistedDevice(device, this.deviceCollection, date);
+                }
+                // Skip health check for blacklisted devices
+                continue;
+            }
+            
+            // Normal health check flow for non-blacklisted devices
             try {
                 if (await this.successfulHealthCheck(device, this.deviceCollection, date)) {
                     healthyCount++;
@@ -308,6 +322,14 @@ class DeviceManager {
     }
 
     async successfulHealthCheck(device, deviceCollection, date) {
+        // Safety check: Don't allow recovery if device is blacklisted
+        // (This shouldn't happen as blacklisted devices are filtered in healthCheck,
+        // but serves as a safeguard)
+        if (device.blacklisted === true) {
+            console.log(`Device ${device.name} is blacklisted - skipping health check recovery`);
+            return false; // Device is not considered active
+        }
+
         const checkResult = await this.#healthCheckDevice(device);
 
         device["health"] = {
@@ -354,6 +376,30 @@ class DeviceManager {
         await this.updateDevice(device, deviceCollection);
 
         return device["status"] === "active";
+    }
+
+    /**
+     * Handle a device that has been blacklisted.
+     * Marks the device as inactive and triggers failover switching if the device
+     * is part of any deployments.
+     * @param {*} device The blacklisted device
+     * @param {*} deviceCollection The device collection
+     * @param {*} date Current date/time
+     */
+    async handleBlacklistedDevice(device, deviceCollection, date) {
+        device["status"] = "inactive";
+        device["statusLog"].unshift({ status: "inactive", time: date, reason: "blacklisted" });
+        console.log("Device", device.name, "is now inactive (blacklisted)");
+        
+        // Check if the blacklisted device has been used in active deployments
+        const deviceId = device._id.toString();
+        const inactiveDeviceDeployments = await orchestrator.fetchDeployments(deviceId);
+        if (inactiveDeviceDeployments && inactiveDeviceDeployments.length > 0) {
+            console.log(`Blacklisted device ${device.name} is part of ${inactiveDeviceDeployments.length} deployment(s) - triggering failover`);
+            orchestrator.switchToFailovers(inactiveDeviceDeployments, deviceId);
+        }
+
+        await this.updateDevice(device, deviceCollection);
     }
 
     async unsuccessfulHealthCheck(device, deviceCollection, date) {
