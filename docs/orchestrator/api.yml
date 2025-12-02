@@ -236,9 +236,9 @@ paths:
               properties:
                 addresses:
                   type: array
+                  description: Device IP addresses
                   items:
                     type: string
-                  description: Device IP addresses
                 host:
                   type: string
                   description: Device hostname or IP
@@ -247,10 +247,10 @@ paths:
                   description: Device name
                 port:
                   type: integer
-                  description: Device port (default: 5000)
+                  description: "Device port (default: 5000)"
                 protocol:
                   type: string
-                  description: Protocol (default: "tcp")
+                  description: "Protocol (default: \"tcp\")"
                 properties:
                   type: object
                   description: Additional device properties
