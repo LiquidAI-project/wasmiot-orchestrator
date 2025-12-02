@@ -6,6 +6,7 @@ required:
 properties:
   name:
     type: string
+    description: Name of the deployment
   sequence:
     type: array
     items:
@@ -14,7 +15,7 @@ properties:
       required:
         - device
         - module
-        - function
+        - func
       properties:
         device:
           description: |
@@ -23,9 +24,17 @@ properties:
         module:
           description: A module ID
           type: string
-        function:
+        func:
           description: |
             The name of the function that should be callable on the node. The
             function must be exported by the module.
           type: string
+        failovers:
+          description: |
+            Optional array of device IDs to use as failover devices if the primary device fails.
+            Blacklisted devices are automatically excluded from failover selection.
+          type: array
+          items:
+            type: string
+          default: null
 

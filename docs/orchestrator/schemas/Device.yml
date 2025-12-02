@@ -6,10 +6,12 @@ required:
   - description
   - health
 properties:
-  id:
+  _id:
     type: string
+    description: MongoDB ObjectId of the device
   name:
     type: string
+    description: Device name/identifier
   communication:
     type: object
     properties:
@@ -17,8 +19,10 @@ properties:
         type: array
         items:
           type: string
+        description: Array of IP addresses for the device
       port:
         type: integer
+        description: Port number for device communication
   description:
     type: object
     properties:
@@ -55,3 +59,35 @@ properties:
             type: string
       timeOfQuery:
         type: string
+        format: date-time
+  status:
+    type: string
+    enum: ["active", "inactive"]
+    description: Current status of the device
+  blacklisted:
+    type: boolean
+    description: Whether the device is blacklisted (defaults to false if not present)
+    default: false
+  statusLog:
+    type: array
+    items:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: ["active", "inactive"]
+        time:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          description: Optional reason for status change (e.g., "blacklisted")
+    description: History of status changes
+  failedHealthCheckCount:
+    type: integer
+    description: Number of consecutive failed health checks
+    default: 0
+  okHealthCheckCount:
+    type: integer
+    description: Number of consecutive successful health checks
+    default: 0

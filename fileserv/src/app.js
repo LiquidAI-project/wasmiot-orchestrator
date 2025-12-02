@@ -80,6 +80,32 @@ async function setRoutes(routeDependencies) {
     // Server utils code for frontend.
     app.get("/utils.js", (_, response) => { response.sendFile(UTILS_PATH); });
 
+    // Serve API documentation
+    app.get("/docs", (request, response) => {
+        const path = require("path");
+        const fs = require("fs");
+        const docsPath = path.join(__dirname, "../../docs/orchestrator/api-docs.html");
+        
+        // Check if the documentation file exists
+        if (!fs.existsSync(docsPath)) {
+            response.status(404).send(`
+                <html>
+                    <head><title>API Documentation Not Found</title></head>
+                    <body>
+                        <h1>API Documentation Not Found</h1>
+                        <p>The API documentation HTML file has not been generated yet.</p>
+                        <p>Please run the following command from the <code>fileserv</code> directory:</p>
+                        <pre>npm run docs:generate</pre>
+                        <p>This will generate the documentation HTML file from the OpenAPI specification.</p>
+                    </body>
+                </html>
+            `);
+            return;
+        }
+        
+        response.sendFile(docsPath);
+    });
+
     // Direct to error-page when bad URL used.
     app.use((_, res) => {
         res.status(404).send({ err: "Bad URL" });
