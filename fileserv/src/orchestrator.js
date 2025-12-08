@@ -407,7 +407,6 @@ class Orchestrator {
             step.module = await this.moduleCollection.findOne(filter);
             // Handle the failovers field in original manifest.
             const failoverDeviceGroup = await this.buildFailoverGroup(manifestStep, availableDevices);
-            console.log("Failover group for step ", i, ": ", failoverDeviceGroup);
             failoversBySequence.push(failoverDeviceGroup);
             i++;
         }
@@ -1208,7 +1207,6 @@ function fetchAndFindResources(sequence, availableDevices) {
         updatedSequence[i].device = selectedDevices[i];
         updatedSequence[i].module = selectedModules[i];
         updatedSequence[i].func   = sequence[i].func;
-        updatedSequence[i].tags  = sequence[i].tags || [];
     }
 
     return updatedSequence;
