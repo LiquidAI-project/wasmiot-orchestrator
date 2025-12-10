@@ -304,7 +304,7 @@ class Orchestrator {
     * followed by any valid failover devices verified through validation.
      * @param {Object} manifestStep The manifest step containing the device and optional failovers.
      * @param {Array<Object>} availableDevices All devices found in orchestrator's database.
-     * @returns {string[]} A list of device IDs (first = original, rest = validated failovers).
+     * @returns {Promise<string[]>} A list of device IDs (first = original, rest = validated failovers).
      */
     async buildFailoverGroup(manifestStep, availableDevices) {
         const validDeviceIds = availableDevices.map(d => d._id.toString());
