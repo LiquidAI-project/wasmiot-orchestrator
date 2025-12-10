@@ -1,4 +1,5 @@
 const express = require("express");
+const { ObjectId } = require("mongodb");
 
 
 let deviceDiscovery = null;
@@ -76,10 +77,72 @@ const registerDevice = async (request, response) => {
 
 }
 
+/**
+ * Blacklist a device by device ID.
+ * Sets the blacklisted field to true in the device record.
+ */
+const blacklistDevice = async (request, response) => {
+    let deviceId = request.params.deviceId;
+    
+    try {
+        const result = await deviceCollection.updateOne(
+            { _id: new ObjectId(deviceId) },
+            { $set: { blacklisted: true } }
+        );
+        
+        if (result.matchedCount === 0) {
+            response.status(404).json({ error: `Device with ID '${deviceId}' not found` });
+            return;
+        }
+        
+        response.status(200).json({ 
+            message: `Device ${deviceId} has been blacklisted`,
+            deviceId: deviceId
+        });
+    } catch (err) {
+        console.error(`Error blacklisting device ${deviceId}:`, err);
+        response.status(400).json({ 
+            error: `Invalid device ID format or database error: ${err.message}` 
+        });
+    }
+}
+
+/**
+ * Unblacklist a device by device ID.
+ * Sets the blacklisted field to false in the device record.
+ */
+const unblacklistDevice = async (request, response) => {
+    let deviceId = request.params.deviceId;
+    
+    try {
+        const result = await deviceCollection.updateOne(
+            { _id: new ObjectId(deviceId) },
+            { $set: { blacklisted: false } }
+        );
+        
+        if (result.matchedCount === 0) {
+            response.status(404).json({ error: `Device with ID '${deviceId}' not found` });
+            return;
+        }
+        
+        response.status(200).json({ 
+            message: `Device ${deviceId} has been unblacklisted`,
+            deviceId: deviceId
+        });
+    } catch (err) {
+        console.error(`Error unblacklisting device ${deviceId}:`, err);
+        response.status(400).json({ 
+            error: `Invalid device ID format or database error: ${err.message}` 
+        });
+    }
+}
+
 const router = express.Router();
 router.get("/", getDevices);
 router.delete("/", deleteDevices);
 router.post("/discovery/reset", rescanDevices);
 router.post("/discovery/register", registerDevice);
+router.post("/:deviceId/blacklist", blacklistDevice);
+router.post("/:deviceId/unblacklist", unblacklistDevice);
 
 module.exports = { setDatabase, setDeviceDiscovery, router };

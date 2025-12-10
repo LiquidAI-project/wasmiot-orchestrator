@@ -1,16 +1,56 @@
 description: Information for a device to set itself up for a workload
 type: object
 required:
+  - deploymentId
   - modules
-  - peers
+  - endpoints
+  - instructions
+  - mounts
 properties:
+  deploymentId:
+    type: string
+    description: ID of the deployment this node belongs to
   modules:
     type: array
     items:
       $ref: "./ModuleDescription.yml"
-  peers:
+    description: Array of modules the device needs to download
+  endpoints:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          url:
+            type: string
+          path:
+            type: string
+          method:
+            type: string
+          request:
+            type: object
+          response:
+            type: object
     description: |
-      An array of device IDs that are expected to have connection to and from this node
-    type: array
-    items:
-      type: string
+      Mapping of module names to functions to endpoints. Structure:
+      endpoints[moduleName][functionName] = endpoint configuration
+  instructions:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties:
+        type: object
+        description: Instruction for chaining function results
+    description: |
+      Instructions for chaining results between functions.
+      Structure: instructions.modules[moduleName][functionName] = instruction
+  mounts:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties:
+        type: object
+    description: |
+      Mounts needed for module functions.
+      Structure: mounts[moduleName][functionName] = mount configuration

@@ -1,17 +1,22 @@
 type: object
 required:
-  - id
+  - _id
   - name
 properties:
-  id:
+  _id:
     type: string
+    description: MongoDB ObjectId of the module
   name:
     type: string
+    description: Name of the module
   description:
     $ref: "./ModuleDescription.yml"
-  mounts:
+    description: OpenAPI description of the module's functions and endpoints
+  dataFiles:
     type: object
-    items:
-      type: string
-      format: binary
+    additionalProperties:
+      type: object
+    description: |
+      Additional data files associated with the module (e.g., ML models).
+      Keys are filenames, values contain file metadata.
 

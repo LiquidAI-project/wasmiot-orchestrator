@@ -221,6 +221,144 @@ paths:
         '204':
           description: The rescan was started
 
+  /file/device/discovery/register:
+    post:
+      description: |
+        Inform orchestrator about a device. Supervisors can force registration to the 
+        orchestrator by sending a POST request containing the device's information.
+      requestBody:
+        description: Device registration information
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                addresses:
+                  type: array
+                  description: Device IP addresses
+                  items:
+                    type: string
+                host:
+                  type: string
+                  description: Device hostname or IP
+                name:
+                  type: string
+                  description: Device name
+                port:
+                  type: integer
+                  description: "Device port (default: 5000)"
+                protocol:
+                  type: string
+                  description: "Protocol (default: \"tcp\")"
+                properties:
+                  type: object
+                  description: Additional device properties
+      responses:
+        '204':
+          description: Device registered successfully
+        '500':
+          description: Device discovery not set up
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /file/device/{deviceId}/blacklist:
+    parameters:
+      - name: deviceId
+        in: path
+        description: ID of the device to blacklist
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Blacklist a device
+      description: |
+        Blacklist a device by device ID. Sets the blacklisted field to true in the device record.
+        Blacklisted devices are automatically marked as inactive and trigger failover switching
+        if they are part of any deployments.
+      tags:
+        - IoT
+      responses:
+        '200':
+          description: Device has been blacklisted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Device 507f1f77bcf86cd799439011 has been blacklisted"
+                  deviceId:
+                    type: string
+        '404':
+          description: Device not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '400':
+          description: Invalid device ID format or database error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /file/device/{deviceId}/unblacklist:
+    parameters:
+      - name: deviceId
+        in: path
+        description: ID of the device to unblacklist
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Unblacklist a device
+      description: |
+        Unblacklist a device by device ID. Sets the blacklisted field to false in the device record.
+        Unblacklisted devices can recover through normal health check mechanisms.
+      tags:
+        - IoT
+      responses:
+        '200':
+          description: Device has been unblacklisted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Device 507f1f77bcf86cd799439011 has been unblacklisted"
+                  deviceId:
+                    type: string
+        '404':
+          description: Device not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '400':
+          description: Invalid device ID format or database error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
   /file/manifest:
     get:
       description: Return information about all created deployments
@@ -245,10 +383,21 @@ paths:
             schema:
               $ref: "#/components/schemas/Manifest"
       responses:
-        '204':
-          description: The deployment was created and enacted
+        '201':
+          description: The deployment was created (returns deployment ID as plain text)
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Deployment ID
         '400':
           description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Failed constructing solution for manifest
           content:
             application/json:
               schema:
@@ -315,6 +464,84 @@ paths:
                 $ref: "#/components/schemas/Error"
         '500':
           description: Deployment failed in some way
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      description: Update a deployment from PUT request and perform needed migrations on already deployed instructions
+      requestBody:
+        description: Updated deployment manifest
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Deployment"
+      responses:
+        '200':
+          description: Deployment updated and redeployed (if previously active)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceResponses:
+                    type: object
+                    description: Device deployment responses (if deployment was active)
+        '204':
+          description: Deployment updated (not redeployed if previously inactive)
+        '404':
+          description: Deployment not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Failed updating manifest for deployment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /file/manifest/failover/{deployment_id}:
+    parameters:
+      - name: deployment_id
+        in: path
+        description: ID of the deployment
+        required: true
+        schema:
+          type: string
+    put:
+      description: |
+        Updates the sequence of a deployment in failover/recovery logic and deploys it 
+        to the devices if the deployment is active. Used internally by the orchestrator
+        when switching to failover devices.
+      requestBody:
+        description: Deployment with updated sequence
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - deployment
+              properties:
+                deployment:
+                  $ref: "#/components/schemas/Deployment"
+      responses:
+        '200':
+          description: Deployment updated and redeployed (if active)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceResponses:
+                    type: object
+        '204':
+          description: Deployment updated (not redeployed if inactive)
+        '500':
+          description: Failed updating manifest for deployment
           content:
             application/json:
               schema:

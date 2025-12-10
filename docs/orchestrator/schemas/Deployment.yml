@@ -1,14 +1,67 @@
 description: |
-  Contains information about a deployment and its current manifest
+  Contains information about a deployment, its manifest, and current state
 type: object
 required:
-  - id
-  - manifest
-  - solution
+  - _id
+  - name
 properties:
-  id:
+  _id:
     type: string
-  manifest:
-    $ref: "./Manifest.yml"
-  solution:
-    $ref: "./DeploymentSolution.yml"
+    description: MongoDB ObjectId of the deployment
+  name:
+    type: string
+    description: Name of the deployment
+  active:
+    type: boolean
+    description: Whether the deployment is currently active (deployed to devices)
+    default: false
+  isInFailover:
+    type: boolean
+    description: Whether the deployment is currently using failover devices
+    default: false
+  goalDeployment:
+    type: array
+    items:
+      type: string
+    description: |
+      Array of device IDs representing the original/intended deployment configuration.
+      Used for recovery when devices come back online.
+  failoversBySequence:
+    type: array
+    items:
+      type: array
+      items:
+        type: string
+    description: |
+      Array of failover groups, one per sequence step. Each group contains:
+      - First element: original device ID
+      - Remaining elements: failover device IDs
+  sequence:
+    type: array
+    items:
+      type: object
+      properties:
+        device:
+          oneOf:
+            - type: string
+            - type: object
+              description: Full device object (when hydrated)
+        module:
+          oneOf:
+            - type: string
+            - type: object
+              description: Full module object (when hydrated)
+        func:
+          type: string
+    description: Current deployment sequence (may contain ObjectIds or full objects)
+  fullManifest:
+    type: object
+    additionalProperties:
+      $ref: "./DeploymentNode.yml"
+    description: |
+      Solution manifest mapping device IDs to their deployment instructions.
+      This is the structure sent to devices during deployment.
+  validationError:
+    type: string
+    description: Validation error message if deployment solution validation failed
+    nullable: true

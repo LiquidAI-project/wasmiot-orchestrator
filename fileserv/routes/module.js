@@ -453,6 +453,13 @@ const deleteModule = async (request, response) => {
 }
 
 
+const deleteAllModules = async (_req, res) => {
+    const { deletedCount } = await moduleCollection.deleteMany({});
+    return res.status(200).json({ deletedCount });
+  };
+  
+  module.exports = { deleteModule, deleteAllModules };
+
 /**
  * Parse WebAssembly module from data and add info extracted from it into input object.
  * @param {*} data Data to parse WebAssembly from e.g. the result of a file-read.
@@ -565,6 +572,7 @@ router.get("/:moduleId", getModule(false));
 router.get("/:moduleId/description", getModule(true));
 router.get("/:moduleId/:filename", getModuleFile);
 router.delete("/:moduleId", /*authenticationMiddleware,*/ deleteModule);
+router.delete("/",deleteAllModules)
 
 module.exports = {
     setDatabase,
