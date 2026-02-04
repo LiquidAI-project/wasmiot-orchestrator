@@ -167,6 +167,33 @@ const deleteDeployments = async (request, response) => {
 }
 
 /**
+ * Delete single deployment by id from database.
+ */
+const deleteOneDeployment = async (request, response) => {
+
+    if (!ObjectId.isValid(request.params.deploymentId)) {
+        return response.status(400).json({ message: "Invalid deployment id" });
+    }
+
+    console.log("deploymentCollection:", deploymentCollection);
+
+    const result = await deploymentCollection.deleteOne({
+        _id: new ObjectId(request.params.deploymentId)
+    });
+
+    console.log(request.params.deploymentId);
+
+    if (result.deletedCount === 0) {
+        return response.status(404).json({ message: "Deployment not found" });
+    }
+
+    response.status(200).json({
+        deletedCount: result.deletedCount
+    });
+};
+
+
+/**
  * Update a deployment from PUT request and perform needed migrations on already
  * deployed instructions.
  * @param {*} request Same as for `createDeployment`.
@@ -242,6 +269,8 @@ router.post("/:deploymentId", deploy);
 router.put("/failover/:deploymentId", updateSequence);
 router.put("/:deploymentId", updateDeployment);
 router.delete("/", deleteDeployments);
+router.delete("/:deploymentId", deleteOneDeployment);
+
 
 
 module.exports = { setDatabase, setOrchestrator, router };

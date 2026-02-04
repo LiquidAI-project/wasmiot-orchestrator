@@ -218,9 +218,9 @@ class Orchestrator {
     };
 
     /**
-     * Fetch all deployments from database that are active and include the deviceId.
+     * Fetch all deployments from database that include the deviceId.
      * @param {*} deviceId Device ID as string or ObjectId
-     * @returns list of deployments that are active and include the deviceId.
+     * @returns list of deployments that include the deviceId.
      */
     async fetchDeployments (deviceId) {
         const deployments = await (await this.deploymentCollection.find()).toArray();
@@ -230,7 +230,6 @@ class Orchestrator {
         const deviceIdStr = deviceId.toString();
 
         for (const deployment of deployments) {
-            //if (!deployment.active || !Array.isArray(deployment.sequence)) continue;
 
             const includesDevice = deployment.sequence.some(step => {
                 if (!step.device) return false;
