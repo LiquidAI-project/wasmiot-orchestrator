@@ -189,3 +189,17 @@ When the orchestrator is started the device, module, and deployment manifest wil
     but sometimes the container opens up inside the subdirectory `/fileserv` with `*.js` etc. files at the root.
 
     Removing old containers and images has seemed to fix this in the past.
+
+## License and main contributors
+
+The software is released under the [MIT license](./LICENSE) and was produced in the LiquidAI project in a collaboration between the University of Jyväskylä and Tampere University.
+
+The main contributors are:
+
+- Juho Tarkkanen, University of Jyväskylä
+- Ville Heikkilä, Tampere University
+- Viljami Järvinen, University of Jyväskylä
+- Teemu Autto, University of Jyväskylä
+- Pyry Kotilainen, University of Jyväskylä
+- Stella Palenius, University of Jyväskylä
+- Lakshan Rathnayaka, Tampere University
