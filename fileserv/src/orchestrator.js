@@ -230,7 +230,8 @@ class Orchestrator {
         const deviceIdStr = deviceId.toString();
 
         for (const deployment of deployments) {
-
+            
+            if (!deployment.sequence || !Array.isArray(deployment.sequence)) continue;
             const includesDevice = deployment.sequence.some(step => {
                 if (!step.device) return false;
                 // Handle both ObjectId and string comparisons
