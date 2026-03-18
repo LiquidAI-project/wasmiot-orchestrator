@@ -74,9 +74,18 @@ const execute = async (request, response) => {
                 } catch (e) {
                     // Assume this is the final result.
                     console.log("Result found!", JSON.stringify(json, null, 2));
-                    result = json.result;
-                    statusCode = 200;
-                    break;
+                    let device;
+                    if (json.resultUrl) {
+                        try {
+                            device = new URL(json.resultUrl).hostname;
+                        } catch (e) {}
+                    }
+
+                    result = {
+                        result: json.result,
+                        device: device,
+                        resultUrl: json.resultUrl
+                    };
                 }
             } else if (json.error) {
                 result = new utils.Error(json.error);
