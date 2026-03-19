@@ -230,7 +230,8 @@ class Orchestrator {
         const deviceIdStr = deviceId.toString();
 
         for (const deployment of deployments) {
-
+            
+            if (!deployment.sequence || !Array.isArray(deployment.sequence)) continue;
             const includesDevice = deployment.sequence.some(step => {
                 if (!step.device) return false;
                 // Handle both ObjectId and string comparisons
@@ -253,8 +254,12 @@ class Orchestrator {
      * @returns 
      */
     async switchToFailovers (deploymentIds, inactiveDeviceId) {
+        const failoverStartTime = Date.now(); // Start time for failover process
+        console.log(`[FAILOVER_START] Starting to search failovers for device ${inactiveDeviceId} at ${new Date(failoverStartTime).toISOString()}`);
+
         //Edit the devices from the matched devices id to the failover devices...
     
+        let apiPromises = [];
         for (const deploymentId of deploymentIds) {
             let deployment;
             let modified = false;
@@ -274,8 +279,8 @@ class Orchestrator {
                 const failoverGroup = deployment.failoversBySequence[i];
                 if (!Array.isArray(failoverGroup) || failoverGroup.length < 2) continue;
             
-                const originalDeviceId = failoverGroup[0];
-                if (originalDeviceId === inactiveDeviceId) {
+                const currentDeviceId = deployment.sequence[i].device?.toString();
+                if (currentDeviceId === inactiveDeviceId) {
                     const failoverCandidates = failoverGroup.slice(1); // skip index 0
                     //Check that the failover device is active
                     const activeFailover = await this.findFirstActiveDevice(failoverCandidates);
@@ -302,15 +307,19 @@ class Orchestrator {
                 );
                 // Deploy the updated deployment to devices
                 const endpointUrl = `${this.packageManagerBaseUrl}file/manifest/failover/${deploymentId}`;
-                try {
-                    const result = await utils.apiCall(endpointUrl, 'PUT', JSON.stringify({ deployment }));
-                    console.log("API result:", result);
-                }
-                catch (error) {
+                const sendTime = Date.now();
+                const provisioningLatency = sendTime - failoverStartTime;
+                console.log(`[FAILOVER_SEND] Sending failover deployment for ${deploymentId} at ${new Date(sendTime).toISOString()}, latency from inactive: ${provisioningLatency} ms`);
+                apiPromises.push(utils.apiCall(endpointUrl, 'PUT', JSON.stringify({ deployment })).catch(error => {
                     console.error(`Error updating failovers for deployment ${deploymentId}:`, error);
-                }
+                }));
             }
         }
+
+        // Await all API calls in parallel
+        await Promise.all(apiPromises);
+            const allDoneTime = Date.now();
+            console.log(`[FAILOVER_COMPLETE] All deployments and devices processed for failover of device ${inactiveDeviceId} at ${new Date(allDoneTime).toISOString()}, total end-to-end latency: ${allDoneTime - failoverStartTime} ms`);
 
         return;
     }
@@ -321,7 +330,7 @@ class Orchestrator {
     * followed by any valid failover devices verified through validation.
      * @param {Object} manifestStep The manifest step containing the device and optional failovers.
      * @param {Array<Object>} availableDevices All devices found in orchestrator's database.
-     * @returns {string[]} A list of device IDs (first = original, rest = validated failovers).
+     * @returns {Promise<string[]>} A list of device IDs (first = original, rest = validated failovers).
      */
     async buildFailoverGroup(manifestStep, availableDevices) {
         const validDeviceIds = availableDevices.map(d => d._id.toString());
@@ -537,14 +546,22 @@ class Orchestrator {
             }
 
             // Start the deployment requests on each device.
-            requests.push([deviceId, this.messageDevice(device, "/deploy", manifest)]);
+            const sendTime = Date.now();
+            console.log(`[DEVICE_SEND] Sending deployment to device ${deviceId} at ${new Date(sendTime).toISOString()}`);
+            requests.push([deviceId, (async () => {
+                const response = await this.messageDevice(device, "/deploy", manifest);
+                const responseTime = Date.now();
+                const deviceLatency = responseTime - sendTime;
+                console.log(`[DEVICE_RESPONSE] Device ${deviceId} responded in ${deviceLatency} ms at ${new Date(responseTime).toISOString()}`);
+                return response;
+            })()]);
         }
 
         // Return devices mapped to their awaited deployment responses.
         let deploymentResponse = Object.fromEntries(await Promise.all(
-            requests.map(async ([deviceId, request]) => {
+            requests.map(async ([deviceId, requestPromise]) => {
                 // Attach the device information to the response.
-                let response = await request;
+                let response = await requestPromise;
                 return [deviceId, response];
             })
         ));
