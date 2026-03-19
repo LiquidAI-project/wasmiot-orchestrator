@@ -279,8 +279,8 @@ class Orchestrator {
                 const failoverGroup = deployment.failoversBySequence[i];
                 if (!Array.isArray(failoverGroup) || failoverGroup.length < 2) continue;
             
-                const originalDeviceId = failoverGroup[0];
-                if (originalDeviceId === inactiveDeviceId) {
+                const currentDeviceId = deployment.sequence[i].device?.toString();
+                if (currentDeviceId === inactiveDeviceId) {
                     const failoverCandidates = failoverGroup.slice(1); // skip index 0
                     //Check that the failover device is active
                     const activeFailover = await this.findFirstActiveDevice(failoverCandidates);

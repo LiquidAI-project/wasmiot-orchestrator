@@ -30,6 +30,7 @@ const execute = async (request, response) => {
         filter.name = request.params.deploymentId;
     }
     let deployment = await deploymentCollection.findOne(filter);
+    const isInFailover = deployment.isInFailover === true;
 
     if (!deployment) {
         response.status(404).send();
@@ -83,9 +84,13 @@ const execute = async (request, response) => {
 
                     result = {
                         result: json.result,
-                        device: device,
-                        resultUrl: json.resultUrl
+                        fetched_from_device: device,
+                        resultUrl: json.resultUrl,
+                        isInFailover: isInFailover // Pass the failover-state of the deployment to the client, so that it can be displayed in the UI.
                     };
+
+                    statusCode = 200;
+                    break;
                 }
             } else if (json.error) {
                 result = new utils.Error(json.error);
