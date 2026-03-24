@@ -8,8 +8,7 @@ WORKDIR /app/fileserv
 COPY package*.json ./
 
 # RUN npm install
-RUN --mount=type=cache,target=/root/.npm \
-    npm clean-install --omit=dev
+RUN npm clean-install --omit=dev
 
 COPY . .
 

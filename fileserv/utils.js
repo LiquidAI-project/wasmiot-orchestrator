@@ -1,11 +1,17 @@
 // Hack to make this file work in both Node.js and browser without erroring.
 let runningInBrowser = false;
 let multer = undefined;
+let deviceFetchAgent = null;
 try {
     multer = require("multer");
 } catch (e) {
     console.log("Importing with 'require' failed; assuming we're in a browser");
     runningInBrowser = true;
+}
+try {
+    deviceFetchAgent = require("./constants.js").deviceFetchAgent;
+} catch (e) {
+    console.warn("Could not load deviceFetchAgent from constants:", e.message);
 }
 
 
@@ -43,7 +49,8 @@ function reducer(dependency, version) {
  * @return {*} Promise of the HTTP response's status code and body parsed from JSON: `{ status, data }`.
  */
 function messageDevice(device, path, body, method="POST") {
-    let url = new URL(`http://${device.communication.addresses[0]}:${device.communication.port}/${path}`);
+    let pathStr = path.startsWith('/') ? path.slice(1) : path;
+    let url = new URL(`http://${device.communication.addresses[0]}:${device.communication.port}/${pathStr}`);
     let requestOptions = {
         method: method,
         headers: {
@@ -54,6 +61,10 @@ function messageDevice(device, path, body, method="POST") {
     };
 
     console.log(`Sending '${method}' request to device '${url}': `, body);
+
+    if (deviceFetchAgent) {
+        requestOptions.dispatcher = deviceFetchAgent;
+    }
 
     return fetch(url, requestOptions)
         .then(response => response.json().then(data => ({ status: response.status, data })));
@@ -115,18 +126,129 @@ const fileUpload =
 function getStartEndpoint(deployment) {
     let startStep = deployment.sequence[0];
     let modId = startStep.module;
+    let devId = startStep.device;
+    if (devId && typeof devId.toString === "function") {
+        devId = devId.toString();
+    }
     let modName = deployment
-        .fullManifest[startStep.device]
+        .fullManifest[devId]
         .modules
         .find(x => x.id.toString() === modId.toString()).name;
     let startEndpoint = deployment
-        .fullManifest[startStep.device]
+        .fullManifest[devId]
         .endpoints[modName][startStep.func];
 
     // Change the string url to an object.
     startEndpoint.url = new URL(startEndpoint.url);
 
     return startEndpoint;
+}
+
+/**
+ * Field names allowed for POST /execute multipart for the **start device**:
+ * union of execution-stage mount names for every sequence step on the same device as
+ * `sequence[0]` (until the sequence leaves that device). The first POST to the supervisor
+ * carries inputs for all chained steps on that host (e.g. distance `input.csv` + LOF
+ * `detect.csv`); dropping non-first-step names used to strip `detect.csv` and break LOF.
+ * Stops at the first step on another device — those steps are not part of this initial POST.
+ * @returns {Set<string>|null} allowed names, or null if manifest cannot be read (caller uses fallback strip)
+ */
+function getAllowedExecutionMultipartFieldNames(deployment) {
+    try {
+        if (!deployment || !deployment.sequence || !deployment.sequence.length || !deployment.fullManifest) {
+            return null;
+        }
+        const startStep = deployment.sequence[0];
+        let startDevId = startStep.device;
+        if (startDevId && typeof startDevId.toString === "function") {
+            startDevId = startDevId.toString();
+        }
+        const node = deployment.fullManifest[startDevId];
+        if (!node || !node.mounts) {
+            return null;
+        }
+        const names = new Set();
+        for (const step of deployment.sequence) {
+            let stepDevId = step.device;
+            if (stepDevId && typeof stepDevId.toString === "function") {
+                stepDevId = stepDevId.toString();
+            }
+            if (stepDevId !== startDevId) {
+                break;
+            }
+            const modId = step.module;
+            const modEntry = (node.modules || []).find(
+                (x) => x && x.id && x.id.toString() === modId.toString()
+            );
+            if (!modEntry || !modEntry.name) {
+                continue;
+            }
+            const modName = modEntry.name;
+            const funcName = step.func;
+            const perFunc = node.mounts[modName] && node.mounts[modName][funcName];
+            if (!perFunc) {
+                continue;
+            }
+            const execArr = perFunc.execution;
+            if (!Array.isArray(execArr)) {
+                continue;
+            }
+            for (const e of execArr) {
+                if (!e) {
+                    continue;
+                }
+                const p = e.path || e.name;
+                if (p) {
+                    names.add(p);
+                }
+            }
+        }
+        return names.size ? names : null;
+    } catch (err) {
+        console.warn("getAllowedExecutionMultipartFieldNames:", err.message);
+        return null;
+    }
+}
+
+/** If manifest is missing, still strip parts that are never valid execute inputs for typical WasmIoT modules. */
+const EXECUTE_MULTIPART_FALLBACK_STRIP = new Set([
+    "output.csv",
+    "trained.bin",
+]);
+
+/**
+ * @param {*} deployment
+ * @param {{ path: string, name: string }[]} files multer file list
+ * @param {*} request start endpoint request (from getStartEndpoint)
+ * @returns {typeof files}
+ */
+function filterFilesForStartEndpointExecute(deployment, files, request) {
+    if (!files || !Array.isArray(files) || files.length === 0) {
+        return files;
+    }
+    if (!request || !request.request_body) {
+        return files;
+    }
+    const allowed = getAllowedExecutionMultipartFieldNames(deployment);
+    if (allowed === null) {
+        const out = files.filter((f) => f && !EXECUTE_MULTIPART_FALLBACK_STRIP.has(f.name));
+        const dropped = files.filter((f) => f && EXECUTE_MULTIPART_FALLBACK_STRIP.has(f.name)).map((f) => f.name);
+        if (dropped.length) {
+            console.log("[execute] Stripped multipart fields (fallback; no execution mount list):", dropped);
+        }
+        return out;
+    }
+    const out = files.filter((f) => f && allowed.has(f.name));
+    const dropped = files.filter((f) => f && !allowed.has(f.name)).map((f) => f.name);
+    if (dropped.length) {
+        console.log(
+            "[execute] Multipart (same-device execution mounts union): dropped:",
+            dropped,
+            "allowed:",
+            [...allowed]
+        );
+    }
+    return out;
 }
 
 /**
@@ -327,6 +449,8 @@ if (!runningInBrowser) {
         validateFileFormSubmission,
         fileUpload,
         getStartEndpoint,
+        getAllowedExecutionMultipartFieldNames,
+        filterFilesForStartEndpointExecute,
         moduleEndpointDescriptions,
         apiCall,
     };

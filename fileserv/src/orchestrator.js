@@ -57,9 +57,10 @@ class MountPathFile {
 
         const mounts = [];
         const encoding = multipartMediaTypeObj.encoding;
+        const toStr = (v) => (typeof v === 'string' ? v : (v && (v.mediaType || v.contentType)) || '');
         for (const [path, _] of getSupportedFileSchemas(schema, encoding)) {
-            const mediaType = encoding[path]['contentType'];
-            // NOTE: The other encoding field ('format') is not regarded here.
+            const raw = encoding[path]['contentType'];
+            const mediaType = toStr(raw) || 'application/octet-stream';
             const mount = new MountPathFile(path, mediaType);
             mounts.push(mount);
         }
@@ -425,6 +426,28 @@ class Orchestrator {
 
         console.log(hydratedManifest.sequence);
 
+        // Hydrate per-step failovers from top-level failoversBySequence when present.
+        // Clients (including the management server) send failover device IDs per step in
+        // failoversBySequence while leaving sequence[i].failovers empty. Previously solve()
+        // only read sequence[i].failovers, so buildFailoverGroup() produced [[primary], ...]
+        // — i.e. each step looked like "failover to self". See docs/ORCHESTRATOR_FAILOVERS_BY_SEQUENCE_FIX.md
+        if (
+            Array.isArray(manifest.failoversBySequence) &&
+            Array.isArray(manifest.sequence) &&
+            manifest.failoversBySequence.length === manifest.sequence.length
+        ) {
+            for (let j = 0; j < manifest.sequence.length; j++) {
+                const row = manifest.failoversBySequence[j];
+                if (!Array.isArray(row) || row.length === 0) {
+                    continue;
+                }
+                const existing = manifest.sequence[j].failovers;
+                if (!Array.isArray(existing) || existing.length === 0) {
+                    manifest.sequence[j].failovers = row;
+                }
+            }
+        }
+
         // Check for blacklisted devices in the manifest sequence (primary devices and failovers)
         for (let step of manifest.sequence) {
             const deviceId = step.device?.toString();
@@ -471,6 +494,9 @@ class Orchestrator {
             // from registry/URL if not found locally.
             // TODO: Actually use a remote-fetch.
             step.module = await this.moduleCollection.findOne(filter);
+            if (!step.module) {
+                throw new Error(`Module not found for sequence step (ID ${(filter._id || filter.name || 'unknown')} may have been deleted). Re-create the deployment.`);
+            }
             // Handle the failovers field in original manifest.
             const failoverDeviceGroup = await this.buildFailoverGroup(manifestStep, availableDevices);
             failoversBySequence.push(failoverDeviceGroup);
@@ -612,8 +638,10 @@ class Orchestrator {
         if (!(["get", "head"].includes(method.toLowerCase()))) {
             // OpenAPI Operation Object's requestBody (including files as input).
             if (request.request_body) {
+                let fileList = files || [];
+                fileList = utils.filterFilesForStartEndpointExecute(deployment, fileList, request);
                 let formData = new FormData();
-                for (let { path, name } of files) {
+                for (let { path, name } of fileList) {
                     formData.append(name, new Blob([fs.readFileSync(path)]));
                 }
                 options.body = formData;
@@ -623,6 +651,10 @@ class Orchestrator {
         }
 
         // Message the first device and return its reaction response.
+        // Use same long Undici timeouts as deploy (default global fetch headersTimeout ~300s).
+        if (constants.deviceFetchAgent) {
+            options.dispatcher = constants.deviceFetchAgent;
+        }
         return fetch(url, options);
     }
 }
@@ -1146,7 +1178,11 @@ function mountsFor(modulee, func, endpoint) {
     }
 
     // Check that all the expected media types are supported.
-    let found_unsupported_medias = request_body_paths.filter(x => !constants.FILE_TYPES.includes(x.media_type));
+    const toMediaTypeStr = (v) => (typeof v === 'string' ? v : (v && v.mediaType) || (v && v.contentType) || String(v || '').split(',')[0] || '');
+    let found_unsupported_medias = request_body_paths.filter(x => {
+        const mt = toMediaTypeStr(x.media_type);
+        return mt && !constants.FILE_TYPES.includes(mt);
+    });
     if (found_unsupported_medias.length > 0) {
         throw new Error(`Input file types not supported: "${found_unsupported_medias}"`);
     }
@@ -1219,6 +1255,9 @@ function fetchAndFindResources(sequence, availableDevices) {
     // Iterate all the items in the request's sequence and fill in the given
     // modules and devices or choose most suitable ones.
     for (let [device, modulee, funcName] of sequence.map(Object.values)) {
+        if (!modulee) {
+            throw `Module not found for sequence step (may have been deleted). Device: ${device && (device._id || device)}`;
+        }
         // If the module and device are orchestrator-based, return immediately.
         if (modulee.isCoreModule) {
             selectedModules.push(modulee);
@@ -1231,17 +1270,35 @@ function fetchAndFindResources(sequence, availableDevices) {
         // always contain the module-id as well.
         // Still, do a validity-check that the requested module indeed
         // contains the func.
-        if (modulee.exports.find(x => x.name === funcName) !== undefined) {
+        let exportsList = modulee.exports;
+        if (typeof exportsList === 'string') {
+            try { exportsList = JSON.parse(exportsList); } catch (_) { exportsList = []; }
+        }
+        if (!Array.isArray(exportsList)) exportsList = [];
+        let funcKnown =
+            exportsList.find(x => x && x.name === funcName) !== undefined;
+        // API-created modules often have `functions` / OpenAPI description but no persisted `exports` array.
+        if (!funcKnown && modulee.functions) {
+            let fnObj = modulee.functions;
+            if (typeof fnObj === 'string') {
+                try { fnObj = JSON.parse(fnObj); } catch (_) { fnObj = null; }
+            }
+            if (fnObj && typeof fnObj === 'object' && Object.prototype.hasOwnProperty.call(fnObj, funcName)) {
+                funcKnown = true;
+            }
+        }
+        if (funcKnown) {
             selectedModules.push(modulee);
         } else {
             throw `Failed to find function '${funcName}' from requested module: ${modulee}`;
         }
 
         function deviceSatisfiesModule(d, m) {
-            return m.requirements.every(
-                r => d.description.supervisorInterfaces.find(
-                    interfacee => interfacee === r.name // i.kind === r.kind && i.module === r.module
-                )
+            const reqs = Array.isArray(m.requirements) ? m.requirements : [];
+            if (reqs.length === 0) return true;
+            const interfaces = (d.description && d.description.supervisorInterfaces) || [];
+            return reqs.every(
+                r => interfaces.find(interfacee => interfacee === (r && r.name))
             );
         }
 
