@@ -89,9 +89,11 @@ const createDeployment = async (request, response) => {
 
         console.error(errorMsg, err, err.stack);
 
+        // Surface err.message in response (Error objects serialize as {} otherwise)
+        const errDetail = err && (err.message || String(err));
         response
             .status(500)
-            .json(new utils.Error(errorMsg, err));
+            .json(new utils.Error(errorMsg, errDetail ? { message: errDetail } : err));
     }
 }
 
@@ -245,13 +247,14 @@ const updateSequence = async (request, response) => {
     try {
         deployment = await orchestrator.solve(deployment, true);
     } catch (err) {
-        errorMsg = "Failed updating manifest for deployment" + deploymentId + err;
+        const errorMsg = "Failed updating manifest for deployment" + deploymentId + err;
 
         console.error(errorMsg, err.stack);
 
         response
             .status(500)
             .json(new utils.Error(errorMsg));
+        return;
     }
 
     if (isActive) {

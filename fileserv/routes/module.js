@@ -1,4 +1,5 @@
 const { readFile } = require("node:fs/promises");
+const { existsSync } = require("node:fs");
 const express = require("express");
 
 const { ObjectId } = require("mongodb");
@@ -64,8 +65,18 @@ const moduleFilter = (x) => {
  * created module resource. On success it results to the added module's ID.
  */
 const createNewModule = async (metadata, files) => {
+    // Parse functions and exports from multipart JSON strings (API upload sends them as text).
+    const doc = { ...metadata };
+    if (typeof doc.functions === "string") {
+        try { doc.functions = JSON.parse(doc.functions); } catch (_) { /* keep as-is */ }
+    }
+    if (typeof doc.exports === "string") {
+        try { doc.exports = JSON.parse(doc.exports); } catch (_) { doc.exports = []; }
+    }
+    if (!Array.isArray(doc.exports)) doc.exports = doc.exports ? [doc.exports] : [];
+
     // Create the database entry.
-    let moduleId = (await moduleCollection.insertOne(metadata)).insertedId;
+    let moduleId = (await moduleCollection.insertOne(doc)).insertedId;
 
     // Attach the Wasm binary.
     return addModuleBinary({_id: moduleId}, files[0]).then(() => moduleId);
@@ -91,7 +102,7 @@ const describeExistingModule = async (moduleId, descriptionManifest, files) => {
                 .map(([k, v]) => ({ name: k, type: v }));
 
         functions[funcName] = {
-            method: func.method.toLowerCase(),
+            method: (func.method || 'get').toLowerCase(),
             parameters: parameters,
             mounts: "mounts" in func
                 ? Object.fromEntries(
@@ -239,7 +250,7 @@ const getModuleFile = async (request, response) => {
     if (doc) {
         let fileObj;
         if (filename === "wasm") {
-            fileObj = doc.wasm;
+            fileObj = doc.wasm || doc.module;
         } else {
             fileObj = doc.dataFiles[filename];
         }
@@ -250,10 +261,23 @@ const getModuleFile = async (request, response) => {
             });
             return;
         }
-        console.log(`Sending '${filename}' file from file-path: `, fileObj.path);
+        const filePath = fileObj.path;
+        if (!filePath || !existsSync(filePath)) {
+            const hint = filename === "wasm"
+                ? " Re-upload modules with upload_all_modules.py against this orchestrator (ORCHESTRATOR_API_URL)."
+                : "";
+            console.error(`ENOENT: file not found: ${filePath}${hint}`);
+            response.status(404).json({
+                err: `file '${filename}' not found on disk`,
+                path: filePath,
+                hint: hint.trim() || undefined,
+            });
+            return;
+        }
+        console.log(`Sending '${filename}' file from file-path: `, filePath);
         // TODO: A 'datafile' might not be application/binary in every case.
         let options = { headers: { 'Content-Type': filename == "wasm" ? 'application/wasm' : 'application/octet-stream' } };
-        response.sendFile(fileObj.path, options);
+        response.sendFile(filePath, options);
     } else {
         let errmsg = `Failed querying for module id: ${request.params.moduleId}`;
         console.log(errmsg);

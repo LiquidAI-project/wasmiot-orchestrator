@@ -411,16 +411,31 @@ class DeviceManager {
         device["failedHealthCheckCount"] = (device["failedHealthCheckCount"] || 0) + 1;
         console.log('Health check count for device', device.name, 'failed, count:', device["failedHealthCheckCount"]);
 
-        if (device["status"] != "inactive" && DEVICE_HEALTHCHECK_THRESHOLD <= device["failedHealthCheckCount"]) {
-            device["status"] = "inactive";
-            device["statusLog"].unshift({ status: "inactive", time: date });
-            console.log("Device", device.name, "is now inactive");
-            
-            //Checks if the device going to inactive state has been used in active deployments
-            const deviceId = device._id.toString();
-            const inactiveDeviceDeployments = await orchestrator.fetchDeployments(deviceId);
-            if (inactiveDeviceDeployments && inactiveDeviceDeployments.length > 0) {
-                orchestrator.switchToFailovers(inactiveDeviceDeployments, deviceId);
+        const thresholdMet = DEVICE_HEALTHCHECK_THRESHOLD <= device["failedHealthCheckCount"];
+
+        if (thresholdMet) {
+            if (device["status"] !== "inactive") {
+                device["status"] = "inactive";
+                device["statusLog"].unshift({ status: "inactive", time: date });
+                console.log("Device", device.name, "is now inactive");
+
+                const deviceId = device._id.toString();
+                const inactiveDeviceDeployments = await orchestrator.fetchDeployments(deviceId);
+                if (inactiveDeviceDeployments && inactiveDeviceDeployments.length > 0) {
+                    orchestrator.switchToFailovers(inactiveDeviceDeployments, deviceId);
+                }
+            } else {
+                // Device was already inactive (e.g. supervisor down before a deployment was created).
+                // Previously switchToFailovers only ran on the active→inactive transition, so new
+                // deployments that still reference this device as primary never failed over.
+                const deviceId = device._id.toString();
+                const stillReferenced = await orchestrator.fetchDeployments(deviceId);
+                if (stillReferenced && stillReferenced.length > 0) {
+                    console.log(
+                        `Device ${device.name} already inactive — ${stillReferenced.length} deployment(s) still reference it; running failover check`
+                    );
+                    orchestrator.switchToFailovers(stillReferenced, deviceId);
+                }
             }
         }
 
